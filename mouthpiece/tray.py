@@ -88,6 +88,8 @@ class App:
         self.session: Optional[VoiceSession] = None
         self.bot: Bot = self.cfg.bot()
         self.last_transcript: str = ""
+        self.captions: list[tuple[str, str, bool]] = []
+        self.stage = None  # set by main() when the stage runs on the main thread
         self.icon = pystray.Icon("mouthpiece", make_icon(STATE_COLORS[State.OFF]), "Mouthpiece", menu=self._build_menu())
 
     def _run_loop(self) -> None:
@@ -108,13 +110,37 @@ class App:
             if data.get("state") == State.ERROR.value and data.get("error"):
                 self._notify(f"{self.bot.display}: {data['error']}")
         elif kind == "transcript":
-            if data.get("final"):
-                self.last_transcript = f"{data['who']}: {data['text']}"
+            who, text, final = data["who"], data["text"], bool(data.get("final"))
+            if self.captions and not self.captions[-1][2] and self.captions[-1][0] == who:
+                self.captions[-1] = (who, text, final)      # live-update the partial line
+            else:
+                self.captions.append((who, text, final))
+            del self.captions[:-6]
+            if final:
+                self.last_transcript = f"{who}: {text}"
                 self._refresh()
+        elif kind == "left" or (kind == "state" and data.get("state") == State.OFF.value):
+            self.captions.clear()
         elif kind == "muted":
             self._refresh()
         elif kind == "agent_error":
             self._notify(f"{self.bot.display}: {data.get('message') or data.get('code') or 'agent error'}")
+
+    def snapshot(self) -> dict:
+        """What the stage paints this frame. Plain data only; called from the Tk thread."""
+        st = self.state
+        a = self.session.audio if self.session else None
+        return {
+            "visible": st not in (State.OFF, State.ERROR),
+            "state": st.value,
+            "muted": bool(self.session and self.session.muted),
+            "spk_level": a.speaker_level if a else 0.0,
+            "mic_level": a.mic_level if a else 0.0,
+            "bot_display": self.bot.display,
+            "accent": self.bot.accent,
+            "skin": self.bot.skin,
+            "captions": list(self.captions),
+        }
 
     def _refresh(self) -> None:
         st = self.state
@@ -188,6 +214,8 @@ class App:
                 pass
             self.loop.call_soon_threadsafe(self.loop.stop)
             self.icon.stop()
+            if self.stage is not None:
+                self.stage.close()
         threading.Thread(target=_stop, daemon=True).start()
 
     # ---- devices ---------------------------------------------------------
@@ -275,7 +303,28 @@ class App:
         )
 
     def run(self) -> None:
-        self.icon.run()
+        """Tray detached on its own thread; the stage owns the main thread (Tk needs it)."""
+        from .stage.window import StageWindow
+        self.stage = StageWindow(
+            self.snapshot,
+            on_click=self.toggle_mute,
+            menu_items=[
+                (lambda: "Unmute microphone" if (self.session and self.session.muted) else "Mute microphone", self.toggle_mute),
+                ("Stop talking", self.cancel_reply),
+                (None, None),
+                (lambda: f"Leave {self.bot.display}", self.leave),
+            ],
+            config_path=CONFIG_PATH,
+            config_raw=self.cfg.raw,
+        )
+        self.icon.run_detached()
+        try:
+            self.stage.mainloop()
+        finally:
+            try:
+                self.icon.stop()
+            except Exception:
+                pass
 
 
 def _single_instance() -> Optional[socket.socket]:
