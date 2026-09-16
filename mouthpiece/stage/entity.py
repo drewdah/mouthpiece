@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from dataclasses import dataclass
 
 from .kitt import Button, hex_lerp
@@ -18,6 +19,27 @@ from .kitt import Button, hex_lerp
 KEY_COLOR = "#010203"          # keyed out by the window; never draw with it on purpose
 SHADOW = "#101014"
 FONT = "Segoe UI"
+
+
+_FONT_CACHE: dict = {}
+
+
+def fit_text(text: str, font: tuple, max_px: float) -> str:
+    """Truncate with an ellipsis so the rendered width fits max_px."""
+    f = _FONT_CACHE.get(font)
+    if f is None:
+        weight = font[2] if len(font) > 2 else "normal"
+        f = _FONT_CACHE[font] = tkfont.Font(family=font[0], size=font[1], weight=weight)
+    if f.measure(text) <= max_px:
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if f.measure(text[:mid] + "…") <= max_px:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo].rstrip() + "…"
 
 
 def rounded_rect(cv, x0, y0, x1, y1, r, **kw):
@@ -88,16 +110,24 @@ class EntitySkin:
 
     # ---- painting ----------------------------------------------------------
     def paint(self, cv: tk.Canvas, w: int, h: int, *, state: str, muted: bool, bot_display: str,
-              captions, hover=None, pressed=None, scroll: int = 0, gated: bool = False) -> None:
+              captions, hover=None, pressed=None, scroll: int = 0, gated: bool = False,
+              response_seq: int = 0) -> None:
         cv.delete("all")
         self.buttons = []
         cv.create_rectangle(0, 0, w, h, fill=KEY_COLOR, outline="")
-        # current bot line for the bubble
+        # The bubble holds only the current reply. A new response wipes it immediately;
+        # that response's text fills it as soon as it arrives.
+        if response_seq != getattr(self, "_bubble_seq", 0):
+            self._bubble_seq = response_seq
+            self.bubble = BubbleState()
         latest = None
         for cap in reversed(captions or []):
-            if cap[0] != "you" and (len(cap) < 4 or cap[3] != "system"):
-                latest = cap
+            if cap[0] == "you" or (len(cap) > 3 and cap[3] == "system"):
+                continue
+            if len(cap) > 5 and cap[5] < response_seq:
                 break
+            latest = cap
+            break
         if latest and latest[1] != self.bubble.text:
             self.bubble = BubbleState(text=latest[1], who=latest[0], shown_at=time.monotonic())
 
@@ -210,8 +240,7 @@ class EntitySkin:
             is_bot = who != "you"
             color = hex_lerp(KEY_COLOR, self.accent if is_bot else "#C9C9CF", a)
             line = f"{'YOU' if not is_bot else who.upper()}: {text}".replace("\n", " ")
-            if len(line) > 58:
-                line = line[:57] + "…"
+            line = fit_text(line, (FONT, 8), (w - 8 - 30) - 16)
             cv.create_text(16, y, text=line, anchor="nw", font=(FONT, 8), fill=color)
             y += 22
         self.scroll_lines = len(lines)

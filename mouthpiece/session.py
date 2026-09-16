@@ -63,6 +63,7 @@ class Transcript:
     kind: str = "reply"     # reply | system (gateway notice, never spoken) | silent (reply that produced no audio)
     id: int = 0
     ts: float = field(default_factory=time.time)
+    seq: int = 0            # response the line belongs to
 
 
 _NOTICE_RE = re.compile(
@@ -100,6 +101,7 @@ class VoiceSession:
         self._next_id = 1
         self._pending_reply: Optional[Transcript] = None   # reply awaiting its audio
         self._resp_had_audio = False
+        self.response_seq = 0        # bumps when a new reply starts
 
     # ---- observers -------------------------------------------------------
     def on(self, fn: Listener) -> None:
@@ -313,10 +315,12 @@ class VoiceSession:
         elif kind in ("response.created", "agent:thinking-start"):
             self._partial = ""
             self._resp_had_audio = False
+            self.response_seq += 1
             self._set_state(State.THINKING)
         elif kind == "response.output_audio_transcript.delta":
             self._partial += payload.get("delta", "") or ""
-            self._emit("transcript", {"who": self.bot.display, "text": self._partial, "final": False, "ts": time.time()})
+            self._emit("transcript", {"who": self.bot.display, "text": self._partial, "final": False, "ts": time.time(),
+                                      "seq": self.response_seq})
         elif kind in ("response.output_audio_transcript.done", "agent:agent-transcript"):
             self._partial = ""
             text = payload.get("transcript", "")
@@ -362,7 +366,7 @@ class VoiceSession:
         text = (text or "").strip()
         if not text or not any(ch.isalnum() for ch in text):
             return None          # glyph-only status pings ("...", a lone emoji) are not captions
-        t = Transcript(who, text, final, kind=kind, id=self._next_id)
+        t = Transcript(who, text, final, kind=kind, id=self._next_id, seq=self.response_seq)
         self._next_id += 1
         self.transcripts.append(t)
         del self.transcripts[:-200]

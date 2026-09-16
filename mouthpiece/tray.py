@@ -117,7 +117,7 @@ class App:
         elif kind == "transcript":
             who, text, final = data["who"], data["text"], bool(data.get("final"))
             tkind, tid = data.get("kind", "reply"), int(data.get("id") or 0)
-            entry = (who, text, final, tkind, tid)
+            entry = (who, text, final, tkind, tid, int(data.get("seq") or 0))
             replaced = False
             if tid:
                 for i, c in enumerate(self.captions):          # update-in-place (e.g. reply -> silent)
@@ -156,6 +156,7 @@ class App:
             "accent": self.bot.accent,
             "skin": self.bot.skin,
             "captions": list(self.captions),
+            "response_seq": self.session.response_seq if self.session else 0,
         }
 
     def _refresh(self) -> None:

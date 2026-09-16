@@ -202,9 +202,13 @@ class StageWindow:
             self._caption_count = n
             if n == 0:
                 self.scroll = 0
+        extra = {}
+        if getattr(self.skin, "transparent", False):
+            extra["response_seq"] = int(snap.get("response_seq") or 0)
         self.skin.paint(self.cv, self.w, self.h, state=snap.get("state", "off"), muted=bool(snap.get("muted")),
                         bot_display=snap.get("bot_display", "BOT"), captions=captions,
-                        hover=self.hover, pressed=self.pressed, scroll=self.scroll, gated=bool(snap.get("gated")))
+                        hover=self.hover, pressed=self.pressed, scroll=self.scroll, gated=bool(snap.get("gated")),
+                        **extra)
 
     def _apply_skin(self, skin_name: str, accent: str) -> None:
         self.skin = SKINS.get(skin_name, KittSkin)(accent)
