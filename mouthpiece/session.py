@@ -360,8 +360,8 @@ class VoiceSession:
 
     def _add_transcript(self, who: str, text: str, final: bool, kind: str = "reply") -> Optional[Transcript]:
         text = (text or "").strip()
-        if not text:
-            return None
+        if not text or not any(ch.isalnum() for ch in text):
+            return None          # glyph-only status pings ("...", a lone emoji) are not captions
         t = Transcript(who, text, final, kind=kind, id=self._next_id)
         self._next_id += 1
         self.transcripts.append(t)

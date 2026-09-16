@@ -66,6 +66,8 @@ class LcdRenderer:
             if self.segment:
                 # DSEG has no pictographs: drop anything outside printable ASCII (the notice glyphs)
                 text = "".join(ch for ch in text if 32 <= ord(ch) < 127).strip()
+            if not text:
+                continue
             body = f"{tag}: {text}".replace(chr(10), " ")
             if kind == "silent":
                 body += " (NO AUDIO)"
