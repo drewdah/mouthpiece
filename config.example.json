@@ -12,6 +12,25 @@
   "barge_in": false,
   "log_file": "mouthpiece.log",
   "bots": [
-    {"id": "kitt", "display": "KITT", "room": "hermes", "accent": "#FF1A1A"}
+    {
+      "id": "kitt",
+      "display": "KITT",
+      "room": "hermes",
+      "accent": "#FF1A1A"
+    },
+    {
+      "id": "baymax",
+      "display": "Baymax",
+      "room": "baymax",
+      "accent": "#FF6B8A",
+      "skin": "kitt"
+    },
+    {
+      "id": "wheatley",
+      "display": "Wheatley",
+      "room": "wheatley",
+      "accent": "#2B6CFF",
+      "skin": "kitt"
+    }
   ]
 }

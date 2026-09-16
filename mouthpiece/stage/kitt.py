@@ -237,16 +237,17 @@ class KittSkin:
             sy = y + i * seg_h
             if on:
                 u = min(1.0, dist / max(lit_radius, 0.001)) if lit_radius > 0 else 0.0
-                face = hex_lerp(self.accent, TIP_RED, u * 0.92)
-                topc = hex_lerp(TOP_RED, face, 0.55 + 0.25 * u)
-                botc = hex_lerp(face, BOT_RED, 0.45)
+                tip = hex_lerp(self.accent, "#000000", 0.62)       # deeper shade of the accent at the tips
+                face = hex_lerp(self.accent, tip, u * 0.92)
+                topc = hex_lerp(hex_lerp(self.accent, "#ffffff", 0.12), face, 0.55 + 0.25 * u)
+                botc = hex_lerp(face, hex_lerp(self.accent, "#000000", 0.8), 0.45)
                 third = seg_h / 3
                 cv.create_rectangle(x, sy, x + w, sy + third, fill=topc, outline="")
                 cv.create_rectangle(x, sy + third, x + w, sy + 2 * third, fill=face, outline="")
                 cv.create_rectangle(x, sy + 2 * third, x + w, sy + seg_h - 1, fill=botc, outline="")
             else:
-                cv.create_rectangle(x, sy, x + w, sy + seg_h / 2, fill=UNLIT_TOP, outline="")
-                cv.create_rectangle(x, sy + seg_h / 2, x + w, sy + seg_h - 1, fill=UNLIT_BOT, outline="")
+                cv.create_rectangle(x, sy, x + w, sy + seg_h / 2, fill=hex_lerp("#0B0B0C", self.accent, 0.14), outline="")
+                cv.create_rectangle(x, sy + seg_h / 2, x + w, sy + seg_h - 1, fill=hex_lerp("#0B0B0C", self.accent, 0.06), outline="")
             cv.create_line(x, sy + seg_h - 1, x + w, sy + seg_h - 1, fill="#000000")
 
     def _paint_bar(self, cv, x, y, w, h, *, busy: bool, sweeping: bool) -> None:
