@@ -7,3 +7,4 @@ config.json.bak*
 logs/
 dist/
 build/
+mouthpiece.ico

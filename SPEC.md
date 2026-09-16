@@ -212,3 +212,17 @@ Date handling itself is fine (HA `ha_get_state` was called and answered). Re-tes
 - **Skin API stays Python-only**: `size`, `step(state, spk, mic, dt)`, `paint(canvas, w, h, snapshot)`, `button_at`. The 30 fps snapshot is the "data API" a Live2D or web pet would consume later through a WebView2 skin kind (levels → mouth-open / eye params).
 - **Shareability (decide license/publishing later)**: token source pluggable with local minting from a LiveKit key/secret as the default; bots + skins purely config/folder driven; first-run setup window; config in AppData; PyInstaller exe; Hermes-side recipe + patches scripted in `lab/` (candidates for upstream PRs to hermes-livekit).
 - **Build order:** Stream Deck trigger + hotkeys → entity skins → abstraction/packaging → Pocket over Wyoming.
+
+## 10. Packaging pass (2026-09-15, done)
+
+- Token source is pluggable: `token_source: livekit` signs room JWTs locally from `livekit_url` + API key/secret
+  (default for other installs, `livekit-api` package); `token_source: mint` keeps the house mint API. Older configs
+  with a `mint_token` load as mint mode automatically.
+- Config precedence: `$MOUTHPIECE_CONFIG` → `<repo>/config.json` (dev) → `%APPDATA%\Mouthpiece\config.json`.
+  Log follows the config location. Secrets are excluded from `Config` repr.
+- First run with no/invalid config opens the setup window (token mode, LiveKit fields, identity, first bot);
+  tray has **Settings…** to reopen it. More bots are still edited in the JSON.
+- `build.ps1` → PyInstaller onedir `dist\Mouthpiece\Mouthpiece.exe` (+ zip, ~46 MB). Bundles the DSEG font and the
+  LiveKit native libs. Verified: the exe joined Wheatley's room and streamed a reply via the trigger API.
+- Remaining before sharing: license + publishing decision, `lab/` scripts for the Hermes-side recipe (profile clone,
+  the two gateway patches, voice install), and a smoke test on a second Windows PC.

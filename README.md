@@ -3,15 +3,37 @@
 Native LiveKit desk client for talking to Hermes bots (KITT first). Tray icon, real Join/Leave,
 full duplex through the house LiveKit room, Pocket-TTS voice back. No browser. See `SPEC.md`.
 
-## Run
+## Install (packaged)
+1. Unzip `Mouthpiece.zip` anywhere and run `Mouthpiece.exe`.
+2. The first run opens a setup window. Pick how tokens are made:
+   - **LiveKit API key + secret** (the usual case): paste your LiveKit server URL (`ws://host:7880` or `wss://…`)
+     and the API key/secret from your LiveKit config. Tokens are signed locally; nothing else is contacted.
+   - **Mint service**: a URL + bearer token if you run a token service instead.
+3. Enter your identity/name and the first bot (its display name and the LiveKit **room** its Hermes gateway waits in).
+4. A tray icon appears. Right-click → Join. Settings… reopens the window later.
+
+Config and log live in `%APPDATA%\Mouthpiece\`. More bots go in the `bots` list of that config.json.
+
+## Run from source (developers)
 ```
 py -3.13 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
-copy config.example.json config.json    # then paste the LiveKit mint token
+copy config.example.json config.json    # or let the setup window create %APPDATA%\Mouthpiece\config.json
 Mouthpiece.cmd                          # tray (pythonw, no console)
 .venv\Scripts\python spike.py           # terminal debug: join, print events, Enter to leave
 ```
-Tray: right-click → Join KITT / Leave / Mute / Bot / devices / Open log. Left-click = Join/Leave.
+A `config.json` next to the source wins over the AppData one, so a checkout keeps its own settings.
+
+## Build the exe
+```
+.venv\Scripts\python -m pip install -r requirements-build.txt
+.uild.ps1                              # dist\Mouthpiece\Mouthpiece.exe + dist\Mouthpiece.zip
+```
+
+## Hermes side
+Each bot is a Hermes profile running the `livekit` platform (pip `hermes-livekit`) as its own gateway, waiting in
+its own room, speaking through its own TTS voice. See `lab/` for the profile recipe and the two gateway patches
+this client relies on (clause-by-clause transcripts, longer streaming-TTS drain).
 
 ## Layout
 - `mouthpiece/config.py` — config.json (gitignored: mint token, devices, bots)

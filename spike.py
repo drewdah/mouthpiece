@@ -34,6 +34,7 @@ async def main() -> int:
     logging.getLogger("livekit").setLevel(logging.WARNING)
 
     cfg = Config.load()
+    assert not cfg.validate(), cfg.validate()
     # Never collide with the tray: LiveKit kicks the older participant on a duplicate identity.
     if a.identity:
         cfg.identity = a.identity

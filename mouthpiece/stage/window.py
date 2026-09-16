@@ -83,6 +83,7 @@ class StageWindow:
             return
         try:
             self.config_raw["stage_pos"] = [self.root.winfo_x(), self.root.winfo_y()]
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
             self.config_path.write_text(json.dumps(self.config_raw, indent=2), encoding="utf-8")
         except Exception:
             log.debug("save stage pos failed", exc_info=True)

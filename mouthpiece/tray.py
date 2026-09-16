@@ -21,7 +21,7 @@ import sounddevice as sd
 from PIL import Image, ImageDraw
 
 from . import __version__
-from .config import CONFIG_PATH, ROOT, Bot, Config
+from .config import Bot, Config, ConfigMissing
 from .hotkeys import Hotkeys
 from .session import State, VoiceSession
 from .trigger import TriggerServer
@@ -52,7 +52,7 @@ class _RedactSecrets(logging.Filter):
 
 
 def setup_logging(cfg: Config) -> str:
-    path = str((ROOT / cfg.log_file).resolve())
+    path = str(cfg.log_path())
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     fh = RotatingFileHandler(path, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
@@ -80,10 +80,10 @@ def make_icon(color: str, muted: bool = False, size: int = 64) -> Image.Image:
 
 
 class App:
-    def __init__(self) -> None:
-        self.cfg = Config.load()
+    def __init__(self, cfg: Config) -> None:
+        self.cfg = cfg
         self.log_path = setup_logging(self.cfg)
-        log.info("Mouthpiece %s starting (config %s)", __version__, CONFIG_PATH)
+        log.info("Mouthpiece %s starting (config %s, token source %s)", __version__, cfg.path, cfg.token_source)
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, name="mouthpiece-loop", daemon=True)
         self.thread.start()
@@ -230,8 +230,7 @@ class App:
 
     def toggle_barge_in(self) -> None:
         self.cfg.barge_in = not self.cfg.barge_in
-        self.cfg.raw["barge_in"] = self.cfg.barge_in
-        CONFIG_PATH.write_text(json.dumps(self.cfg.raw, indent=2), encoding="utf-8")
+        self.cfg.save()
         if self.session:
             self.session.set_barge_in(self.cfg.barge_in)
         log.info("barge-in %s (echo guard %s)", "on" if self.cfg.barge_in else "off", "off" if self.cfg.barge_in else "on")
@@ -239,6 +238,27 @@ class App:
     def cancel_reply(self) -> None:
         if self.session:
             self._call(self.session.cancel_reply())
+
+    def open_settings(self) -> None:
+        """Settings window on the Tk main thread (the stage root owns it)."""
+        if self.stage is None:
+            return
+
+        def _open():
+            from .setup_ui import SetupWindow
+
+            def saved(cfg):
+                log.info("settings saved; token source %s, %d bots", cfg.token_source, len(cfg.bots))
+                self.bot = cfg.bot(self.bot.id) if any(b.id == self.bot.id for b in cfg.bots) else cfg.bot()
+                self._refresh()
+                self._notify("Settings saved. Connection changes apply on next Join.")
+
+            SetupWindow(self.cfg, parent=self.stage.root, on_saved=saved)
+
+        try:
+            self.stage.root.after(0, _open)
+        except Exception:
+            log.exception("open settings failed")
 
     def open_log(self) -> None:
         try:
@@ -278,8 +298,7 @@ class App:
     def _set_device(self, kind: str, index: Optional[int]) -> None:
         field = "input_device" if kind == "input" else "output_device"
         setattr(self.cfg, field, index)
-        self.cfg.raw[field] = index
-        CONFIG_PATH.write_text(json.dumps(self.cfg.raw, indent=2), encoding="utf-8")
+        self.cfg.save()
         log.info("%s device -> %s", kind, index if index is not None else "Windows default")
         if self.session and self.state not in (State.OFF, State.ERROR):
             self._notify("Device change applies on next Join")
@@ -341,6 +360,7 @@ class App:
             pystray.MenuItem("Microphone device", self._device_menu("input")),
             pystray.MenuItem("Speaker device", self._device_menu("output")),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Settings…", lambda: self.open_settings()),
             pystray.MenuItem("Open log", lambda: self.open_log()),
             pystray.MenuItem(lambda item: f"Trigger: 127.0.0.1:{self.cfg.trigger_port}  ·  hotkeys ctrl+alt+M / J / S", None, enabled=False),
             pystray.MenuItem(f"Mouthpiece {__version__}", None, enabled=False),
@@ -359,7 +379,7 @@ class App:
                 (None, None),
                 (lambda: f"Leave {self.bot.display}", self.leave),
             ],
-            config_path=CONFIG_PATH,
+            config_path=self.cfg.path,
             config_raw=self.cfg.raw,
         )
         self.trigger.start()
@@ -391,7 +411,17 @@ def main() -> int:
     if lock is None:
         print("Mouthpiece is already running.", file=sys.stderr)
         return 2
-    app = App()
+    try:
+        cfg = Config.load()
+        problems = cfg.validate()
+    except ConfigMissing:
+        cfg, problems = None, ["no config yet"]
+    if problems:
+        from .setup_ui import SetupWindow
+        if not SetupWindow(cfg).run():
+            return 1
+        cfg = Config.load()
+    app = App(cfg)
     app.run()
     return 0
 

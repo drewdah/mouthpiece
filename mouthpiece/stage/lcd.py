@@ -8,6 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import logging
+
+log = logging.getLogger("mouthpiece.lcd")
 
 FONT_DIR = Path(__file__).with_name("fonts")
 FONT_FILE = FONT_DIR / "DSEG14Classic-Regular.ttf"
@@ -37,6 +40,7 @@ class LcdRenderer:
             self.font = ImageFont.truetype("consola.ttf", FONT_PX) if _has("consola.ttf") else ImageFont.load_default()
             self.segment = False
         self.char_w = max(1.0, self.font.getlength("M"))
+        log.info("LCD font: %s (segment=%s)", FONT_FILE if self.segment else "fallback", self.segment)
         self._cache_key = None
         self._cache_img: Image.Image | None = None
 

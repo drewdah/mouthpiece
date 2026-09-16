@@ -37,7 +37,7 @@ from livekit import rtc
 
 from .audio import RATE, CHANNELS, AudioIO
 from .config import Bot, Config
-from .mint import MintError, mint
+from .mint import MintError, mint_for
 
 log = logging.getLogger("mouthpiece.session")
 
@@ -127,10 +127,7 @@ class VoiceSession:
             return
         self._set_state(State.JOINING)
         try:
-            m = await asyncio.to_thread(
-                mint, self.cfg.mint_url, self.cfg.mint_token,
-                identity=self.cfg.identity, name=self.cfg.name, room=self.bot.room,
-            )
+            m = await asyncio.to_thread(mint_for, self.cfg, room=self.bot.room)
         except MintError as e:
             self._set_state(State.ERROR, str(e))
             return
