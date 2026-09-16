@@ -88,7 +88,7 @@ class App:
         self.session: Optional[VoiceSession] = None
         self.bot: Bot = self.cfg.bot()
         self.last_transcript: str = ""
-        self.captions: list[tuple[str, str, bool]] = []
+        self.captions: list[tuple[str, str, bool, str, int]] = []   # who, text, final, kind, id
         self.stage = None  # set by main() when the stage runs on the main thread
         self.icon = pystray.Icon("mouthpiece", make_icon(STATE_COLORS[State.OFF]), "Mouthpiece", menu=self._build_menu())
 
@@ -111,10 +111,20 @@ class App:
                 self._notify(f"{self.bot.display}: {data['error']}")
         elif kind == "transcript":
             who, text, final = data["who"], data["text"], bool(data.get("final"))
-            if self.captions and not self.captions[-1][2] and self.captions[-1][0] == who:
-                self.captions[-1] = (who, text, final)      # live-update the partial line
-            else:
-                self.captions.append((who, text, final))
+            tkind, tid = data.get("kind", "reply"), int(data.get("id") or 0)
+            entry = (who, text, final, tkind, tid)
+            replaced = False
+            if tid:
+                for i, c in enumerate(self.captions):          # update-in-place (e.g. reply -> silent)
+                    if c[4] == tid:
+                        self.captions[i] = entry
+                        replaced = True
+                        break
+            if not replaced:
+                if self.captions and not self.captions[-1][2] and self.captions[-1][0] == who:
+                    self.captions[-1] = entry                   # live-update the partial line
+                else:
+                    self.captions.append(entry)
             del self.captions[:-60]
             if final:
                 self.last_transcript = f"{who}: {text}"

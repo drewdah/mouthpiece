@@ -16,6 +16,12 @@ LCD_BG = "#070707"
 LCD_GHOST = (60, 10, 8)          # unlit segment ghosting
 LCD_TEXT = (255, 70, 50)
 LCD_GLOW = (255, 40, 20)
+STYLES = {                      # style: (colour, glow alpha)
+    "you": ((235, 120, 60), 120),
+    "bot": ((255, 70, 50), 170),
+    "sys": ((150, 105, 45), 0),          # gateway notice: dim amber, no glow, never spoken
+    "silent": ((125, 32, 26), 0),        # reply that produced no audio: dim, no glow
+}
 LINE_H = 17
 FONT_PX = 11
 PAD_X = 8
@@ -35,39 +41,54 @@ class LcdRenderer:
         self._cache_img: Image.Image | None = None
 
     # ---- text layout ------------------------------------------------------
-    def wrap(self, captions: list[tuple[str, str, bool]], width: int) -> list[tuple[str, bool]]:
-        """Flatten captions into LCD lines: (text, is_bot), wrapped by measured pixel width.
+    def wrap(self, captions, width: int) -> list[tuple[str, str]]:
+        """Flatten captions into LCD lines: (text, style), wrapped by measured pixel width.
 
+        Caption tuples are (who, text, final[, kind[, id]]). Styles: you / bot / sys / silent.
         DSEG14 quirks: the space glyph is 3 px, "!" is the full blank cell (so word gaps use
         it), and "." is a zero-advance dot on the previous cell.
         """
         avail = width - 2 * PAD_X
         gap = "!" if self.segment else " "
-        lines: list[tuple[str, bool]] = []
-        for who, text, final in captions:
+        lines: list[tuple[str, str]] = []
+        for cap in captions:
+            who, text = cap[0], cap[1]
+            kind = cap[3] if len(cap) > 3 else "reply"
             is_bot = who != "you"
-            tag = "KITT" if is_bot else "YOU"
+            if not is_bot:
+                style, tag = "you", "YOU"
+            elif kind == "system":
+                style, tag = "sys", "SYS"
+            elif kind == "silent":
+                style, tag = "silent", "KITT"
+            else:
+                style, tag = "bot", "KITT"
+            if self.segment:
+                # DSEG has no pictographs: drop anything outside printable ASCII (the notice glyphs)
+                text = "".join(ch for ch in text if 32 <= ord(ch) < 127).strip()
             body = f"{tag}: {text}".replace(chr(10), " ")
+            if kind == "silent":
+                body += " (NO AUDIO)"
             if self.segment:
                 body = body.upper()
             cur = ""
             for wd in body.split():
                 while self.font.getlength(wd) > avail:      # a single word longer than the screen
                     cut = max(1, int(len(wd) * avail / self.font.getlength(wd)))
-                    lines.append((wd[:cut], is_bot))
+                    lines.append((wd[:cut], style))
                     wd = wd[cut:]
                 cand = wd if not cur else cur + gap + wd
                 if self.font.getlength(cand) <= avail:
                     cur = cand
                 else:
-                    lines.append((cur, is_bot))
+                    lines.append((cur, style))
                     cur = wd
             if cur:
-                lines.append((cur, is_bot))
+                lines.append((cur, style))
         return lines
 
     # ---- rendering --------------------------------------------------------
-    def render(self, lines: list[tuple[str, bool]], scroll: int, width: int, height: int, visible: int = 3) -> Image.Image:
+    def render(self, lines: list[tuple[str, str]], scroll: int, width: int, height: int, visible: int = 3) -> Image.Image:
         """scroll = number of lines above the bottom that are hidden (0 = pinned to the newest)."""
         total = len(lines)
         end = max(0, total - scroll)
@@ -94,10 +115,11 @@ class LcdRenderer:
             crisp = Image.new("RGBA", (width, height), (0, 0, 0, 0))
             gd = ImageDraw.Draw(glow)
             cd = ImageDraw.Draw(crisp)
-            for i, (text, is_bot) in enumerate(window):
+            for i, (text, style) in enumerate(window):
                 y = PAD_Y + i * LINE_H
-                col = LCD_TEXT if is_bot else (235, 120, 60)
-                gd.text((PAD_X, y), text, font=self.font, fill=LCD_GLOW + (170,))
+                col, glow_a = STYLES.get(style, STYLES["bot"])
+                if glow_a:
+                    gd.text((PAD_X, y), text, font=self.font, fill=LCD_GLOW + (glow_a,))
                 cd.text((PAD_X, y), text, font=self.font, fill=col + (255,))
             glow = glow.filter(ImageFilter.GaussianBlur(2.5))
             img = Image.alpha_composite(img.convert("RGBA"), glow)

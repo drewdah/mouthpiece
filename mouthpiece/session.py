@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -59,7 +60,20 @@ class Transcript:
     who: str        # "you" | bot display
     text: str
     final: bool
+    kind: str = "reply"     # reply | system (gateway notice, never spoken) | silent (reply that produced no audio)
+    id: int = 0
     ts: float = field(default_factory=time.time)
+
+
+_NOTICE_RE = re.compile(
+    "^\\s*[\u2300-\u23ff\u2600-\u27bf\U0001f300-\U0001faff\u2190-\u21ff\u25a0-\u25ff]"   # leading pictograph
+    "|interrupting current task|respond to your message shortly|auto-lowered|context compress|memory trim",
+    re.IGNORECASE,
+)
+
+
+def is_gateway_notice(text: str) -> bool:
+    return bool(_NOTICE_RE.search(text or ""))
 
 
 Listener = Callable[[str, dict], None]
@@ -83,6 +97,9 @@ class VoiceSession:
         self._leaving = False
         self.agent_ready = asyncio.Event()
         self._partial = ""
+        self._next_id = 1
+        self._pending_reply: Optional[Transcript] = None   # reply awaiting its audio
+        self._resp_had_audio = False
 
     # ---- observers -------------------------------------------------------
     def on(self, fn: Listener) -> None:
@@ -295,15 +312,24 @@ class VoiceSession:
             self._add_transcript("you", payload.get("transcript", ""), bool(payload.get("final", True)))
         elif kind in ("response.created", "agent:thinking-start"):
             self._partial = ""
+            self._resp_had_audio = False
             self._set_state(State.THINKING)
         elif kind == "response.output_audio_transcript.delta":
             self._partial += payload.get("delta", "") or ""
             self._emit("transcript", {"who": self.bot.display, "text": self._partial, "final": False, "ts": time.time()})
         elif kind in ("response.output_audio_transcript.done", "agent:agent-transcript"):
             self._partial = ""
-            self._add_transcript(self.bot.display, payload.get("transcript", ""), True)
+            text = payload.get("transcript", "")
+            if is_gateway_notice(text):
+                self._add_transcript(self.bot.display, text, True, kind="system")
+            else:
+                t = self._add_transcript(self.bot.display, text, True, kind="reply")
+                if t is not None and not self._resp_had_audio:
+                    self._pending_reply = t
         elif kind in ("output_audio_buffer.started", "agent:speaking-start"):
             self.speaking_since = time.monotonic()
+            self._resp_had_audio = True
+            self._pending_reply = None
             self._set_state(State.SPEAKING)
         elif kind in ("output_audio_buffer.stopped", "agent:speaking-stop"):
             if self.state == State.SPEAKING:
@@ -316,6 +342,12 @@ class VoiceSession:
             if self.state == State.SPEAKING:
                 self._set_state(State.IN_ROOM)
         elif kind == "response.done":
+            if self._pending_reply is not None and not self._resp_had_audio:
+                # The reply finished without a single audio frame: a silent TTS failure.
+                self._pending_reply.kind = "silent"
+                log.warning("reply produced no audio: %r", self._pending_reply.text[:80])
+                self._emit("transcript", self._pending_reply.__dict__)
+            self._pending_reply = None
             if self.state == State.THINKING:
                 self._set_state(State.IN_ROOM)
         elif kind == "hermes.input_audio.state_updated":
@@ -326,14 +358,16 @@ class VoiceSession:
             self._emit("agent_error", err)
         self._emit("event", {"topic": topic, "type": kind})
 
-    def _add_transcript(self, who: str, text: str, final: bool) -> None:
+    def _add_transcript(self, who: str, text: str, final: bool, kind: str = "reply") -> Optional[Transcript]:
         text = (text or "").strip()
         if not text:
-            return
-        t = Transcript(who, text, final)
+            return None
+        t = Transcript(who, text, final, kind=kind, id=self._next_id)
+        self._next_id += 1
         self.transcripts.append(t)
         del self.transcripts[:-200]
         self._emit("transcript", t.__dict__)
+        return t
 
     async def cancel_reply(self) -> None:
         """Local barge-in button: stop the agent's current reply and flush our speaker buffer."""
