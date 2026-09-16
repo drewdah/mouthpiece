@@ -16,8 +16,8 @@ LCD_BG = "#070707"
 LCD_GHOST = (60, 10, 8)          # unlit segment ghosting
 LCD_TEXT = (255, 70, 50)
 LCD_GLOW = (255, 40, 20)
-LINE_H = 22
-FONT_PX = 14
+LINE_H = 17
+FONT_PX = 11
 PAD_X = 8
 PAD_Y = 6
 
@@ -99,7 +99,7 @@ class LcdRenderer:
                 col = LCD_TEXT if is_bot else (235, 120, 60)
                 gd.text((PAD_X, y), text, font=self.font, fill=LCD_GLOW + (170,))
                 cd.text((PAD_X, y), text, font=self.font, fill=col + (255,))
-            glow = glow.filter(ImageFilter.GaussianBlur(3))
+            glow = glow.filter(ImageFilter.GaussianBlur(2.5))
             img = Image.alpha_composite(img.convert("RGBA"), glow)
             img = Image.alpha_composite(img, crisp).convert("RGB")
         self._cache_key, self._cache_img = key, img

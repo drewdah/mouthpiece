@@ -25,7 +25,7 @@ from .lcd import LINE_H, PAD_Y, LcdRenderer
 MID_SEGS = 15
 SIDE_SEGS = 11
 BAR_SEGS = 16
-LCD_LINES = 3
+LCD_LINES = 4
 
 CORE_RED = "#FF1A1A"
 TIP_RED = "#6E0810"
@@ -176,8 +176,8 @@ class KittSkin:
 
         # scanner bar
         by0 = well_top + well_h + 10
-        bar_w = well_w + 60
-        self._paint_bar(cv, (w - bar_w) / 2, by0, bar_w, bar_h, busy=(state == "thinking"), sweeping=(state == "listening"))
+        bar_w = w - 2 * pad          # same width as the LCD bezel below
+        self._paint_bar(cv, pad, by0, bar_w, bar_h, busy=(state == "thinking"), sweeping=(state == "listening"))
 
         # rails: tiles, some clickable
         rail_w = 56

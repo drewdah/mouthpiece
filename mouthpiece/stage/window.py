@@ -97,7 +97,8 @@ class StageWindow:
             self._scroll_by(1 if e.delta > 0 else -1)
 
     def _scroll_by(self, n: int) -> None:
-        mx = self.skin.lcd.max_scroll(self.skin.lcd_total_lines, 3)
+        from .kitt import LCD_LINES
+        mx = self.skin.lcd.max_scroll(self.skin.lcd_total_lines, LCD_LINES)
         self.scroll = max(0, min(mx, self.scroll + n))
 
     def _press(self, e) -> None:

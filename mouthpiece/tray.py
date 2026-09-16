@@ -194,6 +194,14 @@ class App:
         else:
             self.leave()
 
+    def toggle_barge_in(self) -> None:
+        self.cfg.barge_in = not self.cfg.barge_in
+        self.cfg.raw["barge_in"] = self.cfg.barge_in
+        CONFIG_PATH.write_text(json.dumps(self.cfg.raw, indent=2), encoding="utf-8")
+        if self.session:
+            self.session.set_barge_in(self.cfg.barge_in)
+        log.info("barge-in %s (echo guard %s)", "on" if self.cfg.barge_in else "off", "off" if self.cfg.barge_in else "on")
+
     def cancel_reply(self) -> None:
         if self.session:
             self._call(self.session.cancel_reply())
@@ -292,6 +300,8 @@ class App:
                              checked=lambda item: bool(self.session and self.session.muted), visible=in_room),
             pystray.MenuItem("Stop talking", lambda: self.cancel_reply(),
                              visible=lambda item: self.state == State.SPEAKING),
+            pystray.MenuItem("Allow interruptions (barge-in)", lambda: self.toggle_barge_in(),
+                             checked=lambda item: self.cfg.barge_in),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Bot", pystray.Menu(bot_items)),
             pystray.MenuItem("Microphone device", self._device_menu("input")),

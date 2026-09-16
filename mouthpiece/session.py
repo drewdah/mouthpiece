@@ -144,6 +144,7 @@ class VoiceSession:
                              echo_cancellation=self.cfg.echo_cancellation,
                              noise_suppression=self.cfg.noise_suppression,
                              auto_gain_control=self.cfg.auto_gain_control)
+        self.audio.gate_while_playing = not self.cfg.barge_in
         try:
             self.audio.start()
         except Exception as e:
@@ -219,6 +220,10 @@ class VoiceSession:
         if self.room:
             await self._send(TOPIC_EXT, {"type": "hermes.input_audio.state", "muted": muted})
         self._emit("muted", {"muted": muted})
+
+    def set_barge_in(self, enabled: bool) -> None:
+        if self.audio:
+            self.audio.gate_while_playing = not enabled
 
     @property
     def muted(self) -> bool:

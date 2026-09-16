@@ -9,6 +9,7 @@
   "echo_cancellation": true,
   "noise_suppression": true,
   "auto_gain_control": false,
+  "barge_in": false,
   "log_file": "mouthpiece.log",
   "bots": [
     {"id": "kitt", "display": "KITT", "room": "hermes", "accent": "#FF1A1A"}

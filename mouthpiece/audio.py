@@ -46,6 +46,11 @@ class AudioIO:
             auto_gain_control=auto_gain_control,
         )
         self.muted = False
+        # Echo guard: when True, the mic is silenced toward the agent while agent audio is
+        # playing (plus a short tail). Kills barge-in, but also kills the bot hearing itself.
+        self.gate_while_playing = True
+        self.gate_tail_s = 0.45
+        self.gated = False        # True while the guard is currently silencing the mic
         self.mic_level = 0.0      # 0..1 RMS of what we send
         self.speaker_level = 0.0  # 0..1 RMS of what we play
         self._play = deque()      # int16 numpy chunks from the agent
@@ -129,7 +134,9 @@ class AudioIO:
             self.apm.process_stream(frame)
         except Exception as e:  # never let the audio thread die
             log.debug("apm process_stream: %s", e)
-        if self.muted:
+        playing = self.gate_while_playing and (time.monotonic() - self._last_play_ts) < self.gate_tail_s
+        self.gated = playing and not self.muted
+        if self.muted or playing:
             frame = rtc.AudioFrame(data=bytes(len(pcm) * 2), sample_rate=RATE, num_channels=CHANNELS, samples_per_channel=len(pcm))
             self.mic_level = 0.0
         else:
