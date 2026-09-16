@@ -16,7 +16,7 @@ from .kitt import SKINS, KittSkin
 
 log = logging.getLogger("mouthpiece.stage")
 
-DEFAULT_W, DEFAULT_H = 340, 250
+DEFAULT_W, DEFAULT_H = 340, 300
 FPS = 30
 
 Snapshot = dict  # {state, muted, spk_level, mic_level, bot_display, accent, skin, captions:[(who,text,final)], visible}
@@ -29,6 +29,8 @@ class StageWindow:
         self.actions = actions or {}      # button id -> callable
         self.hover: Optional[str] = None
         self.pressed: Optional[str] = None
+        self.scroll = 0                   # LCD lines hidden below the view (0 = newest)
+        self._caption_count = 0
         self.menu_items = menu_items or []
         self.on_close = on_close
         self.config_path = config_path
@@ -57,6 +59,7 @@ class StageWindow:
         self.cv.bind("<Button-3>", self._popup)
         self.cv.bind("<Motion>", self._hover)
         self.cv.bind("<Leave>", lambda e: self._set_hover(None))
+        self.cv.bind("<MouseWheel>", self._wheel)
         self.root.after(int(1000 / FPS), self._tick)
 
     # ---- placement ------------------------------------------------------
@@ -89,6 +92,14 @@ class StageWindow:
         if self._drag is None:
             self._set_hover(self.skin.button_at(e.x, e.y))
 
+    def _wheel(self, e) -> None:
+        if self.skin.over_lcd(e.x, e.y) or self.skin.button_at(e.x, e.y) in ("scroll_up", "scroll_down"):
+            self._scroll_by(1 if e.delta > 0 else -1)
+
+    def _scroll_by(self, n: int) -> None:
+        mx = self.skin.lcd.max_scroll(self.skin.lcd_total_lines, 3)
+        self.scroll = max(0, min(mx, self.scroll + n))
+
     def _press(self, e) -> None:
         bid = self.skin.button_at(e.x, e.y)
         if bid:
@@ -109,6 +120,12 @@ class StageWindow:
         if self.pressed:
             bid, self.pressed = self.pressed, None
             if self.skin.button_at(e.x, e.y) == bid:
+                if bid == "scroll_up":
+                    self._scroll_by(1)
+                    return
+                if bid == "scroll_down":
+                    self._scroll_by(-1)
+                    return
                 fn = self.actions.get(bid)
                 if fn:
                     try:
@@ -170,9 +187,16 @@ class StageWindow:
         dt, self._last = now - self._last, now
         self.skin.step(snap.get("state", "off"), float(snap.get("spk_level", 0.0)), float(snap.get("mic_level", 0.0)),
                        min(dt, 0.1))
+        captions = snap.get("captions") or []
+        n = len(captions)
+        if n != self._caption_count:
+            # new line arrived: stay pinned to the newest unless the user scrolled up
+            self._caption_count = n
+            if n == 0:
+                self.scroll = 0
         self.skin.paint(self.cv, self.w, self.h, state=snap.get("state", "off"), muted=bool(snap.get("muted")),
-                        bot_display=snap.get("bot_display", "BOT"), captions=snap.get("captions") or [],
-                        hover=self.hover, pressed=self.pressed)
+                        bot_display=snap.get("bot_display", "BOT"), captions=captions,
+                        hover=self.hover, pressed=self.pressed, scroll=self.scroll)
 
     # ---- lifecycle ------------------------------------------------------
     def mainloop(self) -> None:

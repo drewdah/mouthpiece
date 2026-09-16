@@ -115,7 +115,7 @@ class App:
                 self.captions[-1] = (who, text, final)      # live-update the partial line
             else:
                 self.captions.append((who, text, final))
-            del self.captions[:-6]
+            del self.captions[:-60]
             if final:
                 self.last_transcript = f"{who}: {text}"
                 self._refresh()
@@ -307,7 +307,7 @@ class App:
         from .stage.window import StageWindow
         self.stage = StageWindow(
             self.snapshot,
-            actions={"mute": self.toggle_mute, "stop": self.cancel_reply, "leave": self.leave},
+            actions={"mic": self.toggle_mute, "stop": self.cancel_reply, "link": self.leave},
             menu_items=[
                 (lambda: "Unmute microphone" if (self.session and self.session.muted) else "Mute microphone", self.toggle_mute),
                 ("Stop talking", self.cancel_reply),

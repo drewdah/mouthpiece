@@ -1,11 +1,14 @@
 """KITT skin: the voice modulator at the base of the steering column of the 1982 Trans Am.
 
-Ported from the cast-skins desktop plugin (KittClusterAvatar) and pushed closer to the
-show's dash: black vinyl panel, a narrow black well holding three tight LED columns
-(side 11 segments, centre 15), red-only gradient lit from the centre outward, a 16-segment
-scanner bar below, backlit coloured button tiles with black legends on the rails
-(the D1/S1/AUTO CRUISE language), amber dash-label typography, and a bottom row of
-pressable tiles (NORMAL CRUISE / AUTO CRUISE / PURSUIT in the show; here MUTE / STOP / LEAVE).
+Ported from the cast-skins desktop plugin (KittClusterAvatar) and pushed toward the show's
+dash: black vinyl panel, a narrow black well holding three tight LED columns (side 11
+segments, centre 15) lit red from the centre outward, a 16-segment scanner bar below,
+backlit coloured tiles with black legends on the rails (the D1/S1/AUTO CRUISE language),
+amber dash lettering, and a separate bezelled LCD readout at the bottom with red glowing
+14-segment transcript text, three lines visible, scroll arrows on its right edge.
+
+Clickable tiles: MIC (mute/unmute), LINK (leave), the state tile while VOICE (stop talking),
+and the LCD scroll arrows. Hover is subtle: slightly brighter face, light edge, hand cursor.
 """
 from __future__ import annotations
 
@@ -15,11 +18,15 @@ import time
 import tkinter as tk
 from dataclasses import dataclass
 
+from PIL import ImageTk
+
+from .lcd import LINE_H, PAD_Y, LcdRenderer
+
 MID_SEGS = 15
 SIDE_SEGS = 11
 BAR_SEGS = 16
+LCD_LINES = 3
 
-# LED reds (from cast-skins, colour only ever in the red family)
 CORE_RED = "#FF1A1A"
 TIP_RED = "#6E0810"
 TOP_RED = "#FF3A3A"
@@ -27,17 +34,14 @@ BOT_RED = "#3A0408"
 UNLIT_TOP = "#2A1014"
 UNLIT_BOT = "#14080C"
 
-# Dash materials
-PANEL_BG = "#0B0B0C"       # black vinyl
+PANEL_BG = "#0B0B0C"
 PANEL_EDGE = "#26262A"
 BEZEL = "#1C1C1F"
+BEZEL_HI = "#3A3A40"
 WELL_BG = "#000000"
-LABEL_AMBER = "#E5B92A"    # the yellow dash lettering
+LABEL_AMBER = "#E5B92A"
 LABEL_DIM = "#7A6A3A"
-CAPTION_YOU = "#D9C27A"
-CAPTION_BOT = "#FF5A48"
 
-# Backlit button tiles: (face, legend)
 TILES = {
     "red": ("#C8261B", "#1A0604"),
     "amber": ("#E27F1C", "#1F1004"),
@@ -72,7 +76,7 @@ class Button:
 
 class KittSkin:
     name = "kitt"
-    size = (340, 250)
+    size = (340, 300)
 
     def __init__(self, accent: str = CORE_RED) -> None:
         self.accent = accent
@@ -84,13 +88,17 @@ class KittSkin:
         self._t0 = time.monotonic()
         self._noise = [random.random() for _ in range(4)]
         self.buttons: list[Button] = []
+        self.lcd = LcdRenderer()
+        self._lcd_photo = None
+        self.lcd_rect = (0, 0, 0, 0)
+        self.lcd_total_lines = 0
 
-    # ---- dynamics (voiceLevels from cast-skins, driven by real RMS here) ----
+    # ---- dynamics -----------------------------------------------------------
     def step(self, state: str, spk_level: float, mic_level: float, dt: float) -> None:
         t = time.monotonic() - self._t0
         n = self._noise
         if state == "speaking":
-            loud = min(1.0, spk_level * 16.0)           # 0.03 RMS ≈ half stack, 0.06 ≈ full
+            loud = min(1.0, spk_level * 16.0)
             s1 = max(0.0, math.sin(t * 9.5 + n[0] * 1.3))
             s2 = max(0.0, math.sin(t * 3.8 + n[1] * 1.6))
             s3 = abs(math.sin(t * 17.0 + n[2]))
@@ -125,42 +133,40 @@ class KittSkin:
 
     # ---- painting -----------------------------------------------------------
     def paint(self, cv: tk.Canvas, w: int, h: int, *, state: str, muted: bool, bot_display: str,
-              captions: list[tuple[str, str, bool]], hover: str | None = None, pressed: str | None = None) -> None:
+              captions: list[tuple[str, str, bool]], hover: str | None = None, pressed: str | None = None,
+              scroll: int = 0) -> None:
         cv.delete("all")
         self.buttons = []
         cv.create_rectangle(0, 0, w, h, fill=PANEL_BG, outline=PANEL_EDGE)
         cv.create_rectangle(1, 1, w - 2, h - 2, fill="", outline=BEZEL)
 
         pad = 10
-        top = pad
-        cap_h = 42
-        btn_h = 22
-        bar_h = 8
-        # vertical budget: header 14 · well · 6 · bar · 8 · buttons · 8 · captions
         head_h = 14
-        well_top = top + head_h
-        well_bottom = h - pad - cap_h - 8 - btn_h - 8 - bar_h - 6
+        bar_h = 8
+        lcd_h = 2 * PAD_Y + LCD_LINES * LINE_H      # 78
+        lcd_bezel = 6
+        lcd_block = lcd_h + 2 * lcd_bezel
+        well_top = pad + head_h
+        well_bottom = h - pad - lcd_block - 10 - bar_h - 8
         well_h = max(60, well_bottom - well_top)
 
-        # header: dash lettering
-        cv.create_text(pad + 2, top, text=f"{bot_display.upper()}  ·  VOICE SYNTHESIZER", anchor="nw",
+        # header lettering
+        cv.create_text(pad + 2, pad, text=f"{bot_display.upper()}  ·  VOICE SYNTHESIZER", anchor="nw",
                        fill=LABEL_AMBER, font=("Segoe UI", 7, "bold"))
-        cv.create_text(w - pad - 2, top, text="2000", anchor="ne", fill=LABEL_DIM, font=("Segoe UI", 7, "bold"))
+        cv.create_text(w - pad - 2, pad, text="2000", anchor="ne", fill=LABEL_DIM, font=("Segoe UI", 7, "bold"))
 
-        # narrow LED well, centred
+        # narrow LED well
         col_w, gap, well_pad = 20, 6, 7
         well_w = 3 * col_w + 2 * gap + 2 * well_pad
         wx0 = (w - well_w) / 2
         cv.create_rectangle(wx0 - 2, well_top - 2, wx0 + well_w + 2, well_top + well_h + 2, fill=BEZEL, outline="#333")
         cv.create_rectangle(wx0, well_top, wx0 + well_w, well_top + well_h, fill=WELL_BG, outline="")
-        cols = [(SIDE_SEGS, self.side, 0.76), (MID_SEGS, self.mid, 1.0), (SIDE_SEGS, self.side, 0.76)]
-        for i, (segs, level, hp) in enumerate(cols):
+        for i, (segs, level, hp) in enumerate([(SIDE_SEGS, self.side, 0.76), (MID_SEGS, self.mid, 1.0),
+                                                (SIDE_SEGS, self.side, 0.76)]):
             x = wx0 + well_pad + i * (col_w + gap)
             ch = (well_h - 2 * well_pad) * hp
             y0 = well_top + well_pad + ((well_h - 2 * well_pad) - ch) / 2
             self._paint_segs(cv, x, y0, col_w, ch, segs, level)
-
-        # tick marks flanking the well, like the dash gauges
         for side in (-1, 1):
             tx = wx0 - 8 if side < 0 else wx0 + well_w + 8
             for j in range(9):
@@ -168,40 +174,57 @@ class KittSkin:
                 ln = 6 if j % 4 == 0 else 3
                 cv.create_line(tx - (ln if side < 0 else 0), ty, tx + (ln if side > 0 else 0), ty, fill=LABEL_DIM)
 
-        # scanner bar under the well
+        # scanner bar
         by0 = well_top + well_h + 10
         bar_w = well_w + 60
         self._paint_bar(cv, (w - bar_w) / 2, by0, bar_w, bar_h, busy=(state == "thinking"), sweeping=(state == "listening"))
 
-        # rails: backlit tiles with black legends
+        # rails: tiles, some clickable
         rail_w = 56
         link_tone = "green" if state not in ("off", "error", "joining") else "amber"
+        speaking = state == "speaking"
         state_tile = {"in room": ("READY", "dark"), "listening": ("HEARS", "yellow"), "thinking": ("THINK", "amber"),
                       "speaking": ("VOICE", "red"), "joining": ("DIAL", "amber")}.get(state, (state.upper()[:5], "dark"))
-        left = [("MIC", "red" if muted else "green"), ("LINK", link_tone), ("AUTO", "amber"), ("S1", "dark")]
-        right = [(bot_display[:5].upper(), "red"), state_tile, ("PWR", "green"), ("P2", "dark")]
-        self._paint_rail(cv, pad, well_top, rail_w, well_h, left)
-        self._paint_rail(cv, w - pad - rail_w, well_top, rail_w, well_h, right)
+        mic_label = ("UNMUTE" if muted else "MUTE") if hover == "mic" else "MIC"
+        link_label = "LEAVE" if hover == "link" else "LINK"
+        stop_label = "STOP" if (hover == "stop" and speaking) else state_tile[0]
+        left = [("mic", mic_label, "red" if muted else "green"), ("link", link_label, link_tone),
+                (None, "AUTO", "amber"), (None, "S1", "dark")]
+        right = [(None, bot_display[:5].upper(), "red"), ("stop" if speaking else None, stop_label, state_tile[1]),
+                 (None, "PWR", "green"), (None, "P2", "dark")]
+        self._paint_rail(cv, pad, well_top, rail_w, well_h, left, hover, pressed)
+        self._paint_rail(cv, w - pad - rail_w, well_top, rail_w, well_h, right, hover, pressed)
 
-        # bottom row: pressable tiles
-        by = by0 + bar_h + 8
-        labels = [("mute", "UNMUTE" if muted else "MUTE", "amber" if muted else "dark"),
-                  ("stop", "STOP", "red" if state == "speaking" else "dark"),
-                  ("leave", "LEAVE", "dark")]
-        bw = (w - 2 * pad - 2 * 6) / 3
-        for i, (bid, text, tone) in enumerate(labels):
-            x0 = pad + i * (bw + 6)
-            self._paint_button(cv, bid, x0, by, bw, btn_h, text, tone, hover == bid, pressed == bid)
+        # LCD readout block
+        ly0 = h - pad - lcd_block
+        self._paint_lcd(cv, pad, ly0, w - 2 * pad, lcd_block, lcd_bezel, captions, scroll, hover, pressed)
 
-        # captions (fixed height so the layout never jumps)
-        cy = h - pad - cap_h + 2
-        for who, text, final in captions[-2:]:
-            is_bot = who != "you"
-            color = CAPTION_BOT if is_bot else CAPTION_YOU
-            line = f"{who.upper()}: {text}".replace("\n", " ")
-            cv.create_text(pad + 2, cy, text=line, anchor="nw", fill=color if final else hex_lerp(color, PANEL_BG, 0.35),
-                           font=("Segoe UI", 8), width=w - 2 * pad - 4)
-            cy += 19
+    def _paint_lcd(self, cv, x, y, w, h, bezel, captions, scroll, hover, pressed) -> None:
+        arrow_w = 18
+        # bezel: dark plastic frame with a highlight edge, screen recessed inside
+        cv.create_rectangle(x, y, x + w, y + h, fill=BEZEL, outline=BEZEL_HI)
+        cv.create_line(x + 1, y + 1, x + w - 1, y + 1, fill="#4A4A52")
+        sx, sy = x + bezel, y + bezel
+        sw, sh = w - 2 * bezel - arrow_w - 4, h - 2 * bezel
+        cv.create_rectangle(sx - 1, sy - 1, sx + sw + 1, sy + sh + 1, fill="#000000", outline="#000000")
+        lines = self.lcd.wrap(captions, int(sw))
+        self.lcd_total_lines = len(lines)
+        scroll = max(0, min(scroll, self.lcd.max_scroll(len(lines), LCD_LINES)))
+        img = self.lcd.render(lines, scroll, int(sw), int(sh), LCD_LINES)
+        self._lcd_photo = ImageTk.PhotoImage(img)
+        cv.create_image(sx, sy, image=self._lcd_photo, anchor="nw")
+        self.lcd_rect = (sx, sy, sx + sw, sy + sh)
+        # scroll arrows on the right edge
+        ax = sx + sw + 4
+        ah = (sh - 4) / 2
+        can_up = scroll < self.lcd.max_scroll(len(lines), LCD_LINES)
+        can_down = scroll > 0
+        self._tile(cv, ax, sy, arrow_w, ah, "▲", "dark" if can_up else "dark", hover=(hover == "scroll_up"),
+                   pressed=(pressed == "scroll_up"), font_size=7, legend_override=None if can_up else "#3A3A40")
+        self._tile(cv, ax, sy + ah + 4, arrow_w, ah, "▼", "dark", hover=(hover == "scroll_down"),
+                   pressed=(pressed == "scroll_down"), font_size=7, legend_override=None if can_down else "#3A3A40")
+        self.buttons.append(Button("scroll_up", ax, sy, ax + arrow_w, sy + ah))
+        self.buttons.append(Button("scroll_down", ax, sy + ah + 4, ax + arrow_w, sy + sh))
 
     def _paint_segs(self, cv, x, y, w, h, count, level) -> None:
         mid = (count - 1) / 2
@@ -240,34 +263,39 @@ class KittSkin:
             color = hex_lerp(WELL_BG, self.accent, strength) if strength > 0 else hex_lerp(WELL_BG, self.accent, 0.12)
             cv.create_rectangle(sx, y, sx + seg_w, y + h, fill=color, outline="")
 
-    def _tile(self, cv, x, y, w, h, text, tone, *, hover=False, pressed=False, font_size=6) -> None:
+    def _tile(self, cv, x, y, w, h, text, tone, *, hover=False, pressed=False, font_size=6, legend_override=None) -> None:
         face, legend = TILES.get(tone, TILES["dark"])
+        if legend_override:
+            legend = legend_override
         if pressed:
-            face = hex_lerp(face, "#000000", 0.3)
+            face = hex_lerp(face, "#000000", 0.25)
         elif hover:
-            face = hex_lerp(face, "#ffffff", 0.18)
-        edge = "#ffffff" if hover and not pressed else "#000000"
+            face = hex_lerp(face, "#ffffff", 0.10)
+        edge = "#9A9AA0" if hover and not pressed else "#000000"
         cv.create_rectangle(x, y, x + w, y + h, fill=face, outline=edge)
-        # a faint backlight highlight along the top edge
         cv.create_line(x + 1, y + 1, x + w - 1, y + 1, fill=hex_lerp(face, "#ffffff", 0.25))
         cv.create_text(x + w / 2, y + h / 2, text=text, fill=legend, font=("Segoe UI", font_size, "bold"))
 
-    def _paint_rail(self, cv, x, y, w, h, items) -> None:
+    def _paint_rail(self, cv, x, y, w, h, items, hover, pressed) -> None:
         n = len(items)
         tile_h = 17
         spacing = (h - n * tile_h) / max(1, n - 1) if n > 1 else 0
-        for i, (label, tone) in enumerate(items):
-            self._tile(cv, x, y + i * (tile_h + spacing), w, tile_h, label, tone)
-
-    def _paint_button(self, cv, bid, x, y, w, h, text, tone, hover, pressed) -> None:
-        self._tile(cv, x, y, w, h, text, tone, hover=hover, pressed=pressed, font_size=7)
-        self.buttons.append(Button(bid, x, y, x + w, y + h))
+        for i, (bid, label, tone) in enumerate(items):
+            ty = y + i * (tile_h + spacing)
+            self._tile(cv, x, ty, w, tile_h, label, tone, hover=(bid is not None and hover == bid),
+                       pressed=(bid is not None and pressed == bid))
+            if bid:
+                self.buttons.append(Button(bid, x, ty, x + w, ty + tile_h))
 
     def button_at(self, x: float, y: float) -> str | None:
         for b in self.buttons:
             if b.hit(x, y):
                 return b.id
         return None
+
+    def over_lcd(self, x: float, y: float) -> bool:
+        x0, y0, x1, y1 = self.lcd_rect
+        return x0 <= x <= x1 and y0 <= y <= y1
 
 
 SKINS = {"kitt": KittSkin}
