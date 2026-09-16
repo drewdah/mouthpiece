@@ -22,7 +22,9 @@ from PIL import Image, ImageDraw
 
 from . import __version__
 from .config import CONFIG_PATH, ROOT, Bot, Config
+from .hotkeys import Hotkeys
 from .session import State, VoiceSession
+from .trigger import TriggerServer
 
 log = logging.getLogger("mouthpiece.tray")
 
@@ -90,6 +92,9 @@ class App:
         self.last_transcript: str = ""
         self.captions: list[tuple[str, str, bool, str, int]] = []   # who, text, final, kind, id
         self.stage = None  # set by main() when the stage runs on the main thread
+        self.trigger = TriggerServer(self, port=self.cfg.trigger_port)
+        self.hotkeys = Hotkeys(self.cfg.hotkeys, {"toggle_mute": self.toggle_mute, "toggle_join": self.toggle_join,
+                                                  "stop": self.cancel_reply})
         self.icon = pystray.Icon("mouthpiece", make_icon(STATE_COLORS[State.OFF]), "Mouthpiece", menu=self._build_menu())
 
     def _run_loop(self) -> None:
@@ -194,6 +199,23 @@ class App:
     def leave(self) -> None:
         if self.session:
             self._call(self.session.leave())
+
+    def switch(self, bot_id: str) -> None:
+        """One Stream Deck button per bot: join that bot, or leave if already in its room."""
+        bot = self.cfg.bot(bot_id)
+        if self.state not in (State.OFF, State.ERROR) and self.bot.id == bot.id:
+            self.leave()
+        else:
+            self.join(bot)
+
+    def set_muted(self, muted: bool) -> None:
+        if self.session and self.state not in (State.OFF, State.ERROR):
+            self._call(self.session.set_muted(muted))
+
+    def status(self) -> dict:
+        return {"state": self.state.value, "bot": self.bot.id, "bot_display": self.bot.display,
+                "muted": bool(self.session and self.session.muted), "error": self.session.error if self.session else "",
+                "bots": [b.id for b in self.cfg.bots]}
 
     def toggle_mute(self) -> None:
         if self.session and self.state not in (State.OFF, State.ERROR):
@@ -319,6 +341,7 @@ class App:
             pystray.MenuItem("Speaker device", self._device_menu("output")),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open log", lambda: self.open_log()),
+            pystray.MenuItem(lambda item: f"Trigger: 127.0.0.1:{self.cfg.trigger_port}  ·  hotkeys ctrl+alt+M / J / S", None, enabled=False),
             pystray.MenuItem(f"Mouthpiece {__version__}", None, enabled=False),
             pystray.MenuItem("Quit", lambda: self.quit()),
         )
@@ -338,10 +361,14 @@ class App:
             config_path=CONFIG_PATH,
             config_raw=self.cfg.raw,
         )
+        self.trigger.start()
+        self.hotkeys.start()
         self.icon.run_detached()
         try:
             self.stage.mainloop()
         finally:
+            self.hotkeys.stop()
+            self.trigger.stop()
             try:
                 self.icon.stop()
             except Exception:

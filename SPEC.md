@@ -201,3 +201,14 @@ Date handling itself is fine (HA `ha_get_state` was called and answered). Re-tes
 - **Parked until after the Stream Deck API:** talk to Pocket TTS directly over Wyoming (CT207 :10200) instead of through HA `tts_get_url`. Today a 29 s reply takes ~38 s to synthesize on the HA path; the box itself runs RTF ~0.5.
 - **Lab patches now in force on all three bodies** (reapplied by `ExecStartPre`): streaming-TTS first-PCM fix, drain timeout 10 s → 120 s. KITT also defers `clarify` and `text_to_speech` behind tool search.
 - **Open design threads:** per-bot avatars (not recolours of the KITT cluster) via a skin template; abstracting the app for other Hermes builders once packaged as an exe.
+
+## 9. Entity skins and sharing (decided 2026-09-15 evening)
+
+- **KITT keeps the dashboard cluster. Baymax and Wheatley are entity skins**: transparent window with a drop shadow, no panel. V1 art is procedural, drawn from the cast `assets/avatar.png` references (the pet spritesheets were placeholders and are ignored).
+  - Baymax V1: head and shoulders, white rounded bust, two-dot-and-line face. Speaking = eye-line thickens + slow breathing bob; listening = happy-arc eyes; thinking = soft pink glow; stop/barge-in = blink.
+  - Wheatley V1: sphere with the two handle arcs, blue optic. Speaking = aperture opens with volume, iris jitter; thinking = eyelid shutters narrow; eye tilts a little toward the cursor; stop = blink.
+  - Speech: comic bubble above the head for the current line in cast colours; full scrollable transcript strip under the feet on hover or click.
+  - Controls: three round buttons (mute, stop, leave) fade in above the head on hover; same hover rules as the KITT tiles.
+- **Skin API stays Python-only**: `size`, `step(state, spk, mic, dt)`, `paint(canvas, w, h, snapshot)`, `button_at`. The 30 fps snapshot is the "data API" a Live2D or web pet would consume later through a WebView2 skin kind (levels → mouth-open / eye params).
+- **Shareability (decide license/publishing later)**: token source pluggable with local minting from a LiveKit key/secret as the default; bots + skins purely config/folder driven; first-run setup window; config in AppData; PyInstaller exe; Hermes-side recipe + patches scripted in `lab/` (candidates for upstream PRs to hermes-livekit).
+- **Build order:** Stream Deck trigger + hotkeys → entity skins → abstraction/packaging → Pocket over Wyoming.

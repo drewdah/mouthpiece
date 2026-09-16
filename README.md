@@ -50,3 +50,17 @@ Lab side, per bot (on CT116):
 Mouthpiece joins one bot at a time: picking another bot in the tray leaves the current room and
 joins the new one.
 
+
+## Stream Deck / hotkeys
+Local trigger on `http://127.0.0.1:18760` (GET or POST, loopback only). In the Stream Deck app use
+**System → Website** with "Access in background" and a URL such as:
+
+| URL | Does |
+|---|---|
+| `/switch/kitt` · `/switch/baymax` · `/switch/wheatley` | one button per bot: join, or leave if already in that room |
+| `/join/<bot>` / `/leave` / `/toggle` | explicit join, leave, or join/leave the current bot |
+| `/mute` / `/unmute` / `/toggle-mute` | mic |
+| `/stop` | stop the bot talking |
+| `/status` | JSON state |
+
+Global hotkeys (config `hotkeys`): `ctrl+alt+m` mute, `ctrl+alt+j` join/leave, `ctrl+alt+s` stop.

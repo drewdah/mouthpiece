@@ -32,6 +32,8 @@ class Config:
     noise_suppression: bool = True
     auto_gain_control: bool = False
     barge_in: bool = False        # False = echo guard on (mic silenced while the bot talks)
+    trigger_port: int = 18760
+    hotkeys: Optional[dict] = None
     log_file: str = "mouthpiece.log"
     bots: list[Bot] = field(default_factory=list)
     raw: dict = field(default_factory=dict, repr=False)

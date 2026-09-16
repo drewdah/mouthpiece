@@ -32,5 +32,11 @@
       "accent": "#2B6CFF",
       "skin": "kitt"
     }
-  ]
+  ],
+  "trigger_port": 18760,
+  "hotkeys": {
+    "toggle_mute": "ctrl+alt+m",
+    "toggle_join": "ctrl+alt+j",
+    "stop": "ctrl+alt+s"
+  }
 }
