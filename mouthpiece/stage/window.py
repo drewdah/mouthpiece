@@ -12,7 +12,11 @@ import time
 import tkinter as tk
 from typing import Callable, Optional
 
-from .kitt import SKINS, KittSkin
+from .baymax import BaymaxSkin
+from .kitt import KittSkin
+from .wheatley import WheatleySkin
+
+SKINS = {"kitt": KittSkin, "baymax": BaymaxSkin, "wheatley": WheatleySkin}
 
 log = logging.getLogger("mouthpiece.stage")
 
@@ -58,7 +62,8 @@ class StageWindow:
         self.cv.bind("<ButtonRelease-1>", self._release)
         self.cv.bind("<Button-3>", self._popup)
         self.cv.bind("<Motion>", self._hover)
-        self.cv.bind("<Leave>", lambda e: self._set_hover(None))
+        self.cv.bind("<Enter>", lambda e: setattr(self.skin, "hovering", True))
+        self.cv.bind("<Leave>", self._leave)
         self.cv.bind("<MouseWheel>", self._wheel)
         self.root.after(int(1000 / FPS), self._tick)
 
@@ -88,7 +93,13 @@ class StageWindow:
             self.hover = bid
             self.cv.configure(cursor="hand2" if bid else "")
 
+    def _leave(self, e) -> None:
+        self._set_hover(None)
+        self.skin.hovering = False
+
     def _hover(self, e) -> None:
+        self.skin.pointer = (e.x, e.y)
+        self.skin.hovering = True
         if self._drag is None:
             self._set_hover(self.skin.button_at(e.x, e.y))
 
@@ -140,6 +151,8 @@ class StageWindow:
         self._drag = None
         if moved:
             self._save_pos()
+        elif hasattr(self.skin, "strip_pinned"):
+            self.skin.strip_pinned = not self.skin.strip_pinned
 
     def _popup(self, e) -> None:
         m = tk.Menu(self.root, tearoff=0, bg="#12080A", fg="#F2F0EE", activebackground="#5A1018",
@@ -177,13 +190,7 @@ class StageWindow:
             return
         skin_name = snap.get("skin") or "kitt"
         if skin_name != self._skin_name:
-            self.skin = SKINS.get(skin_name, KittSkin)(snap.get("accent") or "#FF1A1A")
-            self._skin_name = skin_name
-            sw, sh = getattr(self.skin, "size", (DEFAULT_W, DEFAULT_H))
-            if (sw, sh) != (self.w, self.h):
-                self.w, self.h = sw, sh
-                self.cv.configure(width=sw, height=sh)
-                self.root.geometry(f"{sw}x{sh}")
+            self._apply_skin(skin_name, snap.get("accent") or "#FF1A1A")
         now = time.monotonic()
         dt, self._last = now - self._last, now
         self.skin.step(snap.get("state", "off"), float(snap.get("spk_level", 0.0)), float(snap.get("mic_level", 0.0)),
@@ -198,6 +205,31 @@ class StageWindow:
         self.skin.paint(self.cv, self.w, self.h, state=snap.get("state", "off"), muted=bool(snap.get("muted")),
                         bot_display=snap.get("bot_display", "BOT"), captions=captions,
                         hover=self.hover, pressed=self.pressed, scroll=self.scroll, gated=bool(snap.get("gated")))
+
+    def _apply_skin(self, skin_name: str, accent: str) -> None:
+        self.skin = SKINS.get(skin_name, KittSkin)(accent)
+        self._skin_name = skin_name
+        sw, sh = getattr(self.skin, "size", (DEFAULT_W, DEFAULT_H))
+        transparent = bool(getattr(self.skin, "transparent", False))
+        key = "#010203"
+        try:
+            if transparent:
+                self.root.attributes("-transparentcolor", key)
+                self.root.attributes("-alpha", 1.0)
+                self.cv.configure(bg=key)
+                self.root.configure(bg=key)
+            else:
+                self.root.attributes("-transparentcolor", "")
+                self.root.attributes("-alpha", 0.96)
+                self.cv.configure(bg="#0A0406")
+                self.root.configure(bg="#0A0406")
+        except tk.TclError:
+            pass
+        if (sw, sh) != (self.w, self.h):
+            self.w, self.h = sw, sh
+            self.cv.configure(width=sw, height=sh)
+            self._place()          # re-clamp to the screen for the new size
+        self.scroll = 0
 
     # ---- lifecycle ------------------------------------------------------
     def mainloop(self) -> None:

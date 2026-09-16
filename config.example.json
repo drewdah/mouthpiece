@@ -23,14 +23,14 @@
       "display": "Baymax",
       "room": "baymax",
       "accent": "#FF6B8A",
-      "skin": "kitt"
+      "skin": "baymax"
     },
     {
       "id": "wheatley",
       "display": "Wheatley",
       "room": "wheatley",
       "accent": "#2B6CFF",
-      "skin": "kitt"
+      "skin": "wheatley"
     }
   ],
   "trigger_port": 18760,
