@@ -192,3 +192,12 @@ Date handling itself is fine (HA `ha_get_state` was called and answered). Re-tes
 - Lab: read + edit voice profile OK; **restart only with Drew's OK**; never change Zoraxy or LiveKit server topology.
 - Any lab patch goes into `/root/projects/livekit-spike/patches/` too, or the next `ExecStartPre` undoes it.
 - OpenWhispr stays dictation-only; Hermes Desktop GPT-Live untouched.
+
+---
+
+## 8. Roadmap and parked items (updated 2026-09-15 evening)
+
+- **Next:** global hotkeys + local HTTP trigger for the Stream Deck (`/join/<bot>`, `/leave`, `/mute`).
+- **Parked until after the Stream Deck API:** talk to Pocket TTS directly over Wyoming (CT207 :10200) instead of through HA `tts_get_url`. Today a 29 s reply takes ~38 s to synthesize on the HA path; the box itself runs RTF ~0.5.
+- **Lab patches now in force on all three bodies** (reapplied by `ExecStartPre`): streaming-TTS first-PCM fix, drain timeout 10 s → 120 s. KITT also defers `clarify` and `text_to_speech` behind tool search.
+- **Open design threads:** per-bot avatars (not recolours of the KITT cluster) via a skin template; abstracting the app for other Hermes builders once packaged as an exe.
