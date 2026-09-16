@@ -1,0 +1,41 @@
+Fix: streaming TTS aborts every LiveKit reply with "unsupported operand type(s) for -: 'float' and 'NoneType'"
+
+Applies to (identical content, both must be patched or ExecStartPre re-applies the bug):
+  /usr/local/lib/hermes-agent/venv/lib/python3.11/site-packages/hermes_livekit/streaming_tts.py
+  /root/projects/livekit-spike/patches/hermes_livekit_streaming_tts.py
+
+Why: gateway/streaming_tts_consumer.py (hermes 0.21.3) marks handle.audible=True after the first
+write_streaming_tts() even when it yielded zero frames, so the `if not handle.audible:` block that
+sets first_queued_at never runs; the onset log then subtracts None. 17/17 replies aborted since
+2026-09-13 21:03 UTC.
+
+--- a/streaming_tts.py
++++ b/streaming_tts.py
+@@ -150,7 +150,7 @@
+                 handle.pending = None
+             if not self._tts_current(handle):
+                 return
+-            if not handle.audible:
++            if handle.first_queued_at is None:
+                 handle.first_queued_at = time.monotonic()
+                 trimmed_ms = handle.leading_silence.trimmed_frames * 20 if handle.leading_silence else 0
+                 logger.info("[%s] streaming TTS first PCM: %.3fs from stream open; trimmed=%dms",
+@@ -166,7 +166,7 @@
+                     "[%s] streaming TTS non-quiet PCM: response_id=%s offset_samples=%d "
+                     "offset=%.3fs queued=%.3fs from first PCM; %.3fs from stream open; peak>%d",
+                     handle.chat_id, handle.response_id, onset, onset / OUTPUT_RATE,
+-                    now - handle.first_queued_at, now - handle.opened_at, PCM_ONSET_PEAK,
++                    now - (handle.first_queued_at or now), now - handle.opened_at, PCM_ONSET_PEAK,
+                 )
+
+Apply (on CT116, after Drew's OK, then restart):
+  P=/usr/local/lib/hermes-agent/venv/lib/python3.11/site-packages/hermes_livekit/streaming_tts.py
+  S=/root/projects/livekit-spike/patches/hermes_livekit_streaming_tts.py
+  for f in $P $S; do
+    cp -a $f $f.bak-$(date +%Y%m%d-%H%M%S)
+    sed -i 's/^            if not handle.audible:$/            if handle.first_queued_at is None:/' $f
+    sed -i 's/now - handle.first_queued_at, now - handle.opened_at, PCM_ONSET_PEAK,/now - (handle.first_queued_at or now), now - handle.opened_at, PCM_ONSET_PEAK,/' $f
+  done
+  python3 -m py_compile $P && systemctl restart hermes-livekit-spike
+
+Verify: journalctl -u hermes-livekit-spike -f | grep -E "streaming TTS (finished|clause)"  → aborted=False
