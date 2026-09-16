@@ -7,6 +7,13 @@ import logging
 import sys
 import threading
 
+# Windows consoles default to cp1252; transcripts can carry emoji.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from mouthpiece.config import Config
 from mouthpiece.session import VoiceSession
 
@@ -17,6 +24,7 @@ async def main() -> int:
     ap.add_argument("--seconds", type=float, default=0, help="auto-leave after N seconds (0 = wait for Enter)")
     ap.add_argument("--say", default=None, help="send a typed turn after joining")
     ap.add_argument("--mute", action="store_true", help="join with the mic muted")
+    ap.add_argument("--wav", default=None, help="feed this 48k mono int16 WAV as the mic once the agent is ready")
     ap.add_argument("-v", action="store_true")
     a = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if a.v else logging.INFO,
@@ -24,6 +32,9 @@ async def main() -> int:
     logging.getLogger("livekit").setLevel(logging.WARNING)
 
     cfg = Config.load()
+    # Never collide with the tray: LiveKit kicks the older participant on a duplicate identity.
+    if not cfg.identity.endswith("-spike"):
+        cfg.identity += "-spike"
     bot = cfg.bot(a.bot)
     loop = asyncio.get_running_loop()
     s = VoiceSession(cfg, bot, loop)
@@ -45,6 +56,16 @@ async def main() -> int:
     if a.say:
         await asyncio.sleep(1)
         await s.send_text(a.say)
+    if a.wav:
+        import wave
+        import numpy as np
+        with wave.open(a.wav, "rb") as w:
+            assert w.getframerate() == 48000 and w.getnchannels() == 1 and w.getsampwidth() == 2, "need 48k mono 16-bit"
+            pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+        await asyncio.wait_for(s.agent_ready.wait(), timeout=15)
+        await asyncio.sleep(1.5)  # let the agent's VAD calibrate on silence first
+        print(f"[inject] {len(pcm)/48000:.1f}s of speech from {a.wav}", flush=True)
+        s.audio.inject = pcm
 
     stop = asyncio.Event()
     if a.seconds > 0:

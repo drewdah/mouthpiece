@@ -56,6 +56,9 @@ class AudioIO:
         self._underruns = 0
         self._captured = 0
         self._last_play_ts = 0.0
+        # Test hook: when set, this int16 array is fed as the mic instead of the device (spike --wav).
+        self.inject: Optional[np.ndarray] = None
+        self._inject_pos = 0
 
     # ---- lifecycle -------------------------------------------------------
     def start(self) -> None:
@@ -113,6 +116,14 @@ class AudioIO:
         if status:
             log.debug("input status: %s", status)
         pcm = np.ascontiguousarray(indata[:, 0], dtype=np.int16)
+        if self.inject is not None:
+            end = self._inject_pos + frames
+            chunk = self.inject[self._inject_pos:end]
+            pcm = np.zeros(frames, dtype=np.int16)
+            pcm[:len(chunk)] = chunk
+            self._inject_pos = end
+            if self._inject_pos >= len(self.inject):
+                self.inject = None
         frame = rtc.AudioFrame(data=pcm.tobytes(), sample_rate=RATE, num_channels=CHANNELS, samples_per_channel=len(pcm))
         try:
             self.apm.process_stream(frame)
