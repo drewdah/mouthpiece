@@ -307,7 +307,7 @@ class App:
         from .stage.window import StageWindow
         self.stage = StageWindow(
             self.snapshot,
-            on_click=self.toggle_mute,
+            actions={"mute": self.toggle_mute, "stop": self.cancel_reply, "leave": self.leave},
             menu_items=[
                 (lambda: "Unmute microphone" if (self.session and self.session.muted) else "Mute microphone", self.toggle_mute),
                 ("Stop talking", self.cancel_reply),

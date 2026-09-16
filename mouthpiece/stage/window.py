@@ -16,17 +16,19 @@ from .kitt import SKINS, KittSkin
 
 log = logging.getLogger("mouthpiece.stage")
 
-DEFAULT_W, DEFAULT_H = 400, 230
+DEFAULT_W, DEFAULT_H = 340, 250
 FPS = 30
 
 Snapshot = dict  # {state, muted, spk_level, mic_level, bot_display, accent, skin, captions:[(who,text,final)], visible}
 
 
 class StageWindow:
-    def __init__(self, feed: Callable[[], Snapshot], *, on_click=None, menu_items=None, on_close=None,
+    def __init__(self, feed: Callable[[], Snapshot], *, actions: Optional[dict] = None, menu_items=None, on_close=None,
                  config_path=None, config_raw: Optional[dict] = None) -> None:
         self.feed = feed
-        self.on_click = on_click
+        self.actions = actions or {}      # button id -> callable
+        self.hover: Optional[str] = None
+        self.pressed: Optional[str] = None
         self.menu_items = menu_items or []
         self.on_close = on_close
         self.config_path = config_path
@@ -53,6 +55,8 @@ class StageWindow:
         self.cv.bind("<B1-Motion>", self._motion)
         self.cv.bind("<ButtonRelease-1>", self._release)
         self.cv.bind("<Button-3>", self._popup)
+        self.cv.bind("<Motion>", self._hover)
+        self.cv.bind("<Leave>", lambda e: self._set_hover(None))
         self.root.after(int(1000 / FPS), self._tick)
 
     # ---- placement ------------------------------------------------------
@@ -76,7 +80,20 @@ class StageWindow:
             log.debug("save stage pos failed", exc_info=True)
 
     # ---- mouse ----------------------------------------------------------
+    def _set_hover(self, bid: Optional[str]) -> None:
+        if bid != self.hover:
+            self.hover = bid
+            self.cv.configure(cursor="hand2" if bid else "")
+
+    def _hover(self, e) -> None:
+        if self._drag is None:
+            self._set_hover(self.skin.button_at(e.x, e.y))
+
     def _press(self, e) -> None:
+        bid = self.skin.button_at(e.x, e.y)
+        if bid:
+            self.pressed = bid
+            return
         self._drag = (e.x_root, e.y_root, self.root.winfo_x(), self.root.winfo_y(), False)
 
     def _motion(self, e) -> None:
@@ -89,14 +106,22 @@ class StageWindow:
             self.root.geometry(f"+{wx + dx}+{wy + dy}")
 
     def _release(self, e) -> None:
+        if self.pressed:
+            bid, self.pressed = self.pressed, None
+            if self.skin.button_at(e.x, e.y) == bid:
+                fn = self.actions.get(bid)
+                if fn:
+                    try:
+                        fn()
+                    except Exception:
+                        log.exception("button %s failed", bid)
+            return
         if not self._drag:
             return
         moved = self._drag[4]
         self._drag = None
         if moved:
             self._save_pos()
-        elif self.on_click:
-            self.on_click()
 
     def _popup(self, e) -> None:
         m = tk.Menu(self.root, tearoff=0, bg="#12080A", fg="#F2F0EE", activebackground="#5A1018",
@@ -136,12 +161,18 @@ class StageWindow:
         if skin_name != self._skin_name:
             self.skin = SKINS.get(skin_name, KittSkin)(snap.get("accent") or "#FF1A1A")
             self._skin_name = skin_name
+            sw, sh = getattr(self.skin, "size", (DEFAULT_W, DEFAULT_H))
+            if (sw, sh) != (self.w, self.h):
+                self.w, self.h = sw, sh
+                self.cv.configure(width=sw, height=sh)
+                self.root.geometry(f"{sw}x{sh}")
         now = time.monotonic()
         dt, self._last = now - self._last, now
         self.skin.step(snap.get("state", "off"), float(snap.get("spk_level", 0.0)), float(snap.get("mic_level", 0.0)),
                        min(dt, 0.1))
         self.skin.paint(self.cv, self.w, self.h, state=snap.get("state", "off"), muted=bool(snap.get("muted")),
-                        bot_display=snap.get("bot_display", "BOT"), captions=snap.get("captions") or [])
+                        bot_display=snap.get("bot_display", "BOT"), captions=snap.get("captions") or [],
+                        hover=self.hover, pressed=self.pressed)
 
     # ---- lifecycle ------------------------------------------------------
     def mainloop(self) -> None:
