@@ -20,3 +20,33 @@ Tray: right-click → Join KITT / Leave / Mute / Bot / devices / Open log. Left-
 - `mouthpiece/session.py` — room lifecycle, agent events, transcripts
 - `mouthpiece/tray.py` — pystray UI
 - `lab/` — patches proposed for the Hermes side
+
+## Adding a bot
+
+Each bot is one entry in the `bots` list of `config.json` and one Hermes profile on the lab.
+
+```json
+{"id": "baymax", "display": "Baymax", "room": "baymax", "accent": "#FF1A1A", "skin": "kitt"}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | short handle; used by the Stream Deck trigger (`/join/<id>`) and the tray |
+| `display` | name shown on the tray, the stage header, and the LCD tag |
+| `room` | the LiveKit room this bot's gateway waits in. Must be unique per bot. |
+| `accent` | LED colour for this bot's cluster |
+| `skin` | stage skin. Only `kitt` exists today; new skins register in `mouthpiece/stage/kitt.py` `SKINS` |
+
+The mint API hands out a token for any room name, so nothing changes there.
+
+Lab side, per bot (on CT116):
+1. Clone a profile: `hermes profile create <name> --clone` (see the `voice` profile as the template).
+2. In that profile's `config.yaml`: `platforms.livekit.extra.room: <room>`, `agent_name: <Display>`
+   (the agent joins as `hermes-<display lower>`), and its own `tts.providers.pocket_tts.voice`
+   for the cloned Pocket voice. Disable the other platforms.
+3. Run its gateway as a service like `hermes-livekit-spike.service`, with `ExecStartPre` reapply
+   of the same streaming patches.
+
+Mouthpiece joins one bot at a time: picking another bot in the tray leaves the current room and
+joins the new one.
+

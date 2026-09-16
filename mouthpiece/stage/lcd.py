@@ -60,9 +60,9 @@ class LcdRenderer:
             elif kind == "system":
                 style, tag = "sys", "SYS"
             elif kind == "silent":
-                style, tag = "silent", "KITT"
+                style, tag = "silent", who[:6]
             else:
-                style, tag = "bot", "KITT"
+                style, tag = "bot", who[:6]
             if self.segment:
                 # DSEG has no pictographs: drop anything outside printable ASCII (the notice glyphs)
                 text = "".join(ch for ch in text if 32 <= ord(ch) < 127).strip()
