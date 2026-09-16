@@ -1,0 +1,16 @@
+{
+  "mint_url": "http://192.168.1.177:8093/v1/livekit/token",
+  "mint_token": "PASTE_LIVEKIT_MINT_TOKEN",
+  "identity": "drew-desk",
+  "name": "Drew",
+  "prefer_lan_url": true,
+  "input_device": null,
+  "output_device": null,
+  "echo_cancellation": true,
+  "noise_suppression": true,
+  "auto_gain_control": false,
+  "log_file": "mouthpiece.log",
+  "bots": [
+    {"id": "kitt", "display": "KITT", "room": "hermes", "accent": "#FF1A1A"}
+  ]
+}
