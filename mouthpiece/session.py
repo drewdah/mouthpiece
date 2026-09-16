@@ -1,15 +1,26 @@
 """A voice session: mint -> connect -> publish mic -> play agent -> events -> leave.
 
-Agent-side protocol (hermes_livekit 0.4.0 adapter, observed on CT116):
-  data topic "conference.extensions": {"type": "agent:<event>", "payload": {...}}
-     agent:listening-start/stop {identity}, agent:thinking-start,
-     agent:user-transcript {transcript, final, identity, source},
-     agent:agent-transcript {transcript, final}, agent:speaking-start/stop,
-     hermes.input_audio.state_updated {muted}
-  data topic "conference.events": OpenAI-realtime-style events (only if the client
-     opts into that protocol; we do not).
-Client -> agent on "conference.extensions": {"type": "hermes.input_audio.state", "muted": bool}
-Client -> agent on "conference.extensions": {"type": "conference.message", "text": "..."} injects a typed turn.
+Agent-side protocol (hermes_livekit 0.4.0 adapter, verified on CT116 2026-09-15):
+
+Topic "conference.events" (OpenAI-realtime style, flat JSON) — what we actually receive:
+  session.created {session}                                   agent is in the room and ready
+  input_audio_buffer.speech_started / speech_stopped          VAD heard us
+  conversation.item.input_audio_transcription.completed {transcript}   what STT heard
+  response.created {response}                                 agent is thinking
+  response.output_audio_transcript.delta {delta} / .done {transcript}  what the agent says
+  output_audio_buffer.started / stopped / cleared             speaking / done / interrupted
+  response.done {response}
+  error {error: {code, message}}
+Client -> agent on "conference.events": {"type": "response.cancel"} stops the current reply.
+
+Topic "conference.extensions" (Hermes controls, {"type", ...}):
+  client -> agent  {"type": "hermes.input_audio.state", "muted": bool}   agent ignores our audio
+  client -> agent  {"type": "conference.message", "text": "..."}         typed turn, no STT
+  agent -> client  {"type": "hermes.input_audio.state_updated", "muted": bool}
+  agent -> client  {"type": "error", "error": {...}}  e.g. input_audio_too_long
+  (agent:* lifecycle events also arrive here in some builds; handled too)
+
+The agent joins a few seconds AFTER the first human, and leaves 2 s after the last one drops.
 """
 from __future__ import annotations
 
@@ -71,6 +82,7 @@ class VoiceSession:
         self.speaking_since: float = 0.0
         self._leaving = False
         self.agent_ready = asyncio.Event()
+        self._partial = ""
 
     # ---- observers -------------------------------------------------------
     def on(self, fn: Listener) -> None:
@@ -259,33 +271,67 @@ class VoiceSession:
             msg = json.loads(bytes(packet.data).decode("utf-8"))
         except Exception:
             return
+        if not isinstance(msg, dict):
+            return
         topic = packet.topic or ""
         kind = msg.get("type", "")
-        payload = msg.get("payload") or {}
-        log.debug("data[%s] %s %s", topic, kind, payload if kind != "agent:agent-transcript" else "(transcript)")
-        if kind == "agent:listening-start":
-            self._set_state(State.LISTENING)
-        elif kind == "agent:listening-stop":
+        payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else msg
+        log.debug("data[%s] %s", topic, kind)
+
+        if kind in ("input_audio_buffer.speech_started", "agent:listening-start"):
+            if self.state in (State.IN_ROOM, State.LISTENING, State.SPEAKING):
+                self._set_state(State.LISTENING)
+        elif kind in ("input_audio_buffer.speech_stopped", "agent:listening-stop"):
             if self.state == State.LISTENING:
                 self._set_state(State.IN_ROOM)
-        elif kind == "agent:thinking-start":
+        elif kind == "conversation.item.input_audio_transcription.completed":
+            self._add_transcript("you", payload.get("transcript", ""), True)
+        elif kind == "agent:user-transcript":
+            self._add_transcript("you", payload.get("transcript", ""), bool(payload.get("final", True)))
+        elif kind in ("response.created", "agent:thinking-start"):
+            self._partial = ""
             self._set_state(State.THINKING)
-        elif kind == "agent:speaking-start":
+        elif kind == "response.output_audio_transcript.delta":
+            self._partial += payload.get("delta", "") or ""
+            self._emit("transcript", {"who": self.bot.display, "text": self._partial, "final": False, "ts": time.time()})
+        elif kind in ("response.output_audio_transcript.done", "agent:agent-transcript"):
+            self._partial = ""
+            self._add_transcript(self.bot.display, payload.get("transcript", ""), True)
+        elif kind in ("output_audio_buffer.started", "agent:speaking-start"):
             self.speaking_since = time.monotonic()
             self._set_state(State.SPEAKING)
-        elif kind == "agent:speaking-stop":
-            self._set_state(State.IN_ROOM)
-        elif kind == "agent:user-transcript":
-            t = Transcript("you", payload.get("transcript", ""), bool(payload.get("final", True)))
-            self.transcripts.append(t)
-            self._emit("transcript", t.__dict__)
-        elif kind == "agent:agent-transcript":
-            t = Transcript(self.bot.display, payload.get("transcript", ""), bool(payload.get("final", True)))
-            self.transcripts.append(t)
-            self._emit("transcript", t.__dict__)
+        elif kind in ("output_audio_buffer.stopped", "agent:speaking-stop"):
+            if self.state == State.SPEAKING:
+                self._set_state(State.IN_ROOM)
+        elif kind == "output_audio_buffer.cleared":
+            # Barge-in: the agent dropped the rest of its reply; drop what we have buffered too.
+            if self.audio:
+                self.audio.clear_playback()
+            self._emit("interrupted", {})
+            if self.state == State.SPEAKING:
+                self._set_state(State.IN_ROOM)
+        elif kind == "response.done":
+            if self.state == State.THINKING:
+                self._set_state(State.IN_ROOM)
         elif kind == "hermes.input_audio.state_updated":
             self._emit("muted", {"muted": bool(msg.get("muted"))})
         elif kind == "error":
             err = msg.get("error") or {}
+            log.warning("agent error: %s", err)
             self._emit("agent_error", err)
-        self._emit("event", {"topic": topic, "type": kind, "payload": payload})
+        self._emit("event", {"topic": topic, "type": kind})
+
+    def _add_transcript(self, who: str, text: str, final: bool) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        t = Transcript(who, text, final)
+        self.transcripts.append(t)
+        del self.transcripts[:-200]
+        self._emit("transcript", t.__dict__)
+
+    async def cancel_reply(self) -> None:
+        """Local barge-in button: stop the agent's current reply and flush our speaker buffer."""
+        if self.audio:
+            self.audio.clear_playback()
+        await self._send(TOPIC_EVENTS, {"type": "response.cancel"})
