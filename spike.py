@@ -25,6 +25,7 @@ async def main() -> int:
     ap.add_argument("--say", default=None, help="send a typed turn after joining")
     ap.add_argument("--mute", action="store_true", help="join with the mic muted")
     ap.add_argument("--wav", default=None, help="feed this 48k mono int16 WAV as the mic once the agent is ready")
+    ap.add_argument("--force", action="store_true", help="test even if another human is already in the room")
     ap.add_argument("-v", action="store_true")
     a = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if a.v else logging.INFO,
@@ -51,6 +52,14 @@ async def main() -> int:
     await s.join()
     if s.state.value == "error":
         return 1
+    # A second human identity in the room opens a second Hermes session; if the model asks that
+    # session a clarifying question and the spike leaves, the whole room wedges on the unanswered
+    # clarify (happened 2026-09-15). Never test in a room someone is using.
+    humans = [p.identity for p in s.room.remote_participants.values() if not p.identity.startswith("hermes-")]
+    if humans and not a.force:
+        print(f"[abort] room already has {humans}; not testing in an occupied room (use --force)", flush=True)
+        await s.leave()
+        return 3
     if a.mute:
         await s.set_muted(True)
     if a.say:
