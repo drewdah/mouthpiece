@@ -134,6 +134,7 @@ class App:
             "visible": st not in (State.OFF, State.ERROR),
             "state": st.value,
             "muted": bool(self.session and self.session.muted),
+            "gated": bool(a and a.gated),
             "spk_level": a.speaker_level if a else 0.0,
             "mic_level": a.mic_level if a else 0.0,
             "bot_display": self.bot.display,

@@ -134,7 +134,7 @@ class KittSkin:
     # ---- painting -----------------------------------------------------------
     def paint(self, cv: tk.Canvas, w: int, h: int, *, state: str, muted: bool, bot_display: str,
               captions: list[tuple[str, str, bool]], hover: str | None = None, pressed: str | None = None,
-              scroll: int = 0) -> None:
+              scroll: int = 0, gated: bool = False) -> None:
         cv.delete("all")
         self.buttons = []
         cv.create_rectangle(0, 0, w, h, fill=PANEL_BG, outline=PANEL_EDGE)
@@ -185,10 +185,10 @@ class KittSkin:
         speaking = state == "speaking"
         state_tile = {"in room": ("READY", "dark"), "listening": ("HEARS", "yellow"), "thinking": ("THINK", "amber"),
                       "speaking": ("VOICE", "red"), "joining": ("DIAL", "amber")}.get(state, (state.upper()[:5], "dark"))
-        mic_label = ("UNMUTE" if muted else "MUTE") if hover == "mic" else "MIC"
+        mic_label = ("UNMUTE" if muted else "MUTE") if hover == "mic" else ("HOLD" if gated else "MIC")
         link_label = "LEAVE" if hover == "link" else "LINK"
         stop_label = "STOP" if (hover == "stop" and speaking) else state_tile[0]
-        left = [("mic", mic_label, "red" if muted else "green"), ("link", link_label, link_tone),
+        left = [("mic", mic_label, "red" if muted else ("yellow" if gated else "green")), ("link", link_label, link_tone),
                 (None, "AUTO", "amber"), (None, "S1", "dark")]
         right = [(None, bot_display[:5].upper(), "red"), ("stop" if speaking else None, stop_label, state_tile[1]),
                  (None, "PWR", "green"), (None, "P2", "dark")]

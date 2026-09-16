@@ -165,7 +165,9 @@ class AudioIO:
             self._underruns += 1
         outdata[:, 0] = out
         self.speaker_level = _rms(out)
-        if pos > 0:
+        # The agent's track streams silence continuously, so "frames arrived" is not
+        # "the bot is talking". Only real energy counts as playback for the echo guard.
+        if pos > 0 and self.speaker_level > 0.004:
             self._last_play_ts = time.monotonic()
         # Tell the echo canceller what the speakers just played.
         try:

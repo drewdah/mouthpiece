@@ -197,7 +197,7 @@ class StageWindow:
                 self.scroll = 0
         self.skin.paint(self.cv, self.w, self.h, state=snap.get("state", "off"), muted=bool(snap.get("muted")),
                         bot_display=snap.get("bot_display", "BOT"), captions=captions,
-                        hover=self.hover, pressed=self.pressed, scroll=self.scroll)
+                        hover=self.hover, pressed=self.pressed, scroll=self.scroll, gated=bool(snap.get("gated")))
 
     # ---- lifecycle ------------------------------------------------------
     def mainloop(self) -> None:
