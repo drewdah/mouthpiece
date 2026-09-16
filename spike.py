@@ -26,6 +26,7 @@ async def main() -> int:
     ap.add_argument("--mute", action="store_true", help="join with the mic muted")
     ap.add_argument("--wav", default=None, help="feed this 48k mono int16 WAV as the mic once the agent is ready")
     ap.add_argument("--force", action="store_true", help="test even if another human is already in the room")
+    ap.add_argument("--identity", default=None, help="override the participant identity (fresh identity = fresh Hermes session)")
     ap.add_argument("-v", action="store_true")
     a = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if a.v else logging.INFO,
@@ -34,7 +35,9 @@ async def main() -> int:
 
     cfg = Config.load()
     # Never collide with the tray: LiveKit kicks the older participant on a duplicate identity.
-    if not cfg.identity.endswith("-spike"):
+    if a.identity:
+        cfg.identity = a.identity
+    elif not cfg.identity.endswith("-spike"):
         cfg.identity += "-spike"
     bot = cfg.bot(a.bot)
     loop = asyncio.get_running_loop()
