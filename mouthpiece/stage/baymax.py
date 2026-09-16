@@ -64,7 +64,6 @@ class BaymaxSkin(EntitySkin):
         hy = top + 66 + by
         cv.create_oval(hx - 78, hy - 44, hx + 78, hy + 46, fill=SHADE2, outline="")
         cv.create_oval(hx - 76, hy - 46, hx + 76, hy + 42, fill=WHITE, outline="")
-        cv.create_oval(hx - 60, hy - 44, hx + 30, hy - 16, fill="#FBFCFF", outline="")
         # face: two dots joined by a line
         eye_dx, eye_y = 34, hy + 2
         line_w = 3.0 + 3.5 * self.level

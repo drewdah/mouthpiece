@@ -79,7 +79,6 @@ class WheatleySkin(EntitySkin):
         # shell
         cv.create_oval(cx - R, cy - R, cx + R, cy + R, fill=SHELL_DARK, outline=SEAM, width=2)
         cv.create_oval(cx - R + 6, cy - R + 4, cx + R - 10, cy + R - 14, fill=SHELL, outline="")
-        cv.create_oval(cx - R + 26, cy - R + 12, cx - 10, cy - R + 46, fill="#FAFBFD", outline="")
         # seams
         cv.create_arc(cx - R + 3, cy - R + 3, cx + R - 3, cy + R - 3, start=200 + self.roll, extent=120, style="arc",
                       outline=SEAM, width=1)
