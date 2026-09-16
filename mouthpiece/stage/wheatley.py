@@ -40,7 +40,7 @@ def _rot(px, py, cx, cy, deg):
 
 class WheatleySkin(EntitySkin):
     name = "wheatley"
-    size = (300, 420)
+    size = (300, 464)
     accent = "#2B6CFF"
 
     def __init__(self, accent: str | None = None) -> None:

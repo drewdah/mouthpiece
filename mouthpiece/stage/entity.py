@@ -67,6 +67,7 @@ class EntitySkin:
     # layout bands (fractions of height)
     BUBBLE_H = 118
     STRIP_H = 84
+    CONTROLS_H = 44       # row of round controls under the strip
     CONTROL_R = 15
 
     def __init__(self, accent: str | None = None) -> None:
@@ -132,12 +133,12 @@ class EntitySkin:
             self.bubble = BubbleState(text=latest[1], who=latest[0], shown_at=time.monotonic())
 
         body_top = self.BUBBLE_H
-        body_bottom = h - self.STRIP_H
+        body_bottom = h - self.STRIP_H - self.CONTROLS_H
         self.paint_shadow(cv, w, body_top, body_bottom)
         self.paint_body(cv, w, body_top, body_bottom, state=state, muted=muted)
         self.paint_bubble(cv, w, state, bot_display)
-        self.paint_strip(cv, w, h, captions, scroll)
-        self.paint_controls(cv, w, body_top, state, muted, hover, pressed)
+        self.paint_strip(cv, w, h - self.CONTROLS_H, captions, scroll)
+        self.paint_controls(cv, w, h, state, muted, hover, pressed)
         if gated or muted:
             self.paint_mic_badge(cv, w, body_top, muted)
 
@@ -185,11 +186,12 @@ class EntitySkin:
         cv.create_text(x0 + pad, y0 + pad, text=b.text, anchor="nw", width=bw - 2 * pad,
                        font=(FONT, 9), fill=self.text_on_bubble)
 
-    def paint_controls(self, cv, w, top, state, muted, hover, pressed) -> None:
+    def paint_controls(self, cv, w, h, state, muted, hover, pressed) -> None:
+        """Three round controls floating just under the transcript strip."""
         a = self.hover_alpha
         if a < 0.03:
             return
-        hx, hy = self.head_anchor(w, top)
+        hx = w / 2
         items = [("mic", "UNMUTE" if muted else "MUTE", "amber" if muted else None),
                  ("stop", "STOP", "red" if state == "speaking" else None),
                  ("link", "LEAVE", None)]
@@ -197,7 +199,7 @@ class EntitySkin:
         gap = 12
         total = len(items) * (2 * r) + (len(items) - 1) * gap
         x = hx - total / 2 + r
-        y = 20
+        y = h - self.CONTROLS_H / 2
         for bid, label, tone in items:
             base = {"amber": "#E27F1C", "red": "#C8261B"}.get(tone or "", hex_lerp(self.accent, "#000000", 0.35))
             face = hex_lerp(KEY_COLOR, base, a)
@@ -258,7 +260,8 @@ class EntitySkin:
         return None
 
     def over_lcd(self, x: float, y: float) -> bool:
-        return self.hover_alpha > 0.5 and y > self.size[1] - self.STRIP_H
+        bottom = self.size[1] - self.CONTROLS_H
+        return self.hover_alpha > 0.5 and bottom - self.STRIP_H < y < bottom
 
     # hooks the window calls
     @property

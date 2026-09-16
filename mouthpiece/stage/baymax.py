@@ -19,7 +19,7 @@ INK = "#101014"
 
 class BaymaxSkin(EntitySkin):
     name = "baymax"
-    size = (300, 430)
+    size = (300, 474)
     accent = "#FF6B8A"
 
     def __init__(self, accent: str | None = None) -> None:
