@@ -152,13 +152,13 @@ class App:
     def _face_source(self) -> dict:
         """Called from the face thread each frame; plain reads only."""
         s = self.session
-        return {"state": self.state.value, "muted": bool(s and s.muted), "audio": s.audio if s else None}
+        return {"state": self.state.value, "muted": self.mic_muted, "audio": s.audio if s else None}
 
     def _on_session_event(self, kind: str, data: dict) -> None:
         if kind == "muted":
             self.mic_muted = bool(data.get("muted"))
         if self.desk and kind in ("state", "muted"):
-            self.desk.update(self.state.value, self.bot.id, bool(self.session and self.session.muted))
+            self.desk.update(self.state.value, self.bot.id, self.mic_muted)
         if kind == "state":
             self._refresh()
             if data.get("state") == State.ERROR.value and data.get("error"):
@@ -197,7 +197,7 @@ class App:
         return {
             "visible": st not in (State.OFF, State.ERROR) and self.cfg.show_stage,
             "state": st.value,
-            "muted": bool(self.session and self.session.muted),
+            "muted": self.mic_muted,
             "gated": bool(a and a.gated),
             "spk_level": a.speaker_level if a else 0.0,
             "mic_level": a.mic_level if a else 0.0,
@@ -211,7 +211,7 @@ class App:
     def _refresh(self) -> None:
         st = self.state
         color = STATE_COLORS.get(st) or self.bot.accent
-        muted = bool(self.session and self.session.muted)
+        muted = self.mic_muted
         try:
             self.icon.icon = make_icon(color, muted)
             self.icon.title = f"Mouthpiece — {self.bot.display}: {st.value}" + (" (muted)" if muted else "")
@@ -259,17 +259,22 @@ class App:
             self.join(bot)
 
     def set_muted(self, muted: bool) -> None:
+        """Mute is sticky: outside a room it just sets how the next join starts."""
+        self.mic_muted = muted          # now, so a quick second press toggles back
         if self.session and self.state not in (State.OFF, State.ERROR):
             self._call(self.session.set_muted(muted))
+            return
+        if self.desk:
+            self.desk.update(self.state.value, self.bot.id, muted)
+        self._refresh()
 
     def status(self) -> dict:
         return {"state": self.state.value, "bot": self.bot.id, "bot_display": self.bot.display,
-                "muted": bool(self.session and self.session.muted), "error": self.session.error if self.session else "",
+                "muted": self.mic_muted, "error": self.session.error if self.session else "",
                 "bots": [b.id for b in self.cfg.bots]}
 
     def toggle_mute(self) -> None:
-        if self.session and self.state not in (State.OFF, State.ERROR):
-            self._call(self.session.set_muted(not self.session.muted))
+        self.set_muted(not self.mic_muted)
 
     def toggle_join(self) -> None:
         if self.state in (State.OFF, State.ERROR):
@@ -401,7 +406,7 @@ class App:
             pystray.MenuItem(lambda item: f"Leave {self.bot.display}", lambda: self.leave(),
                              visible=lambda item: self.state not in (State.OFF, State.ERROR), default=True),
             pystray.MenuItem("Mute microphone", lambda: self.toggle_mute(),
-                             checked=lambda item: bool(self.session and self.session.muted), visible=in_room),
+                             checked=lambda item: self.mic_muted),
             pystray.MenuItem("Stop talking", lambda: self.cancel_reply(),
                              visible=lambda item: self.state == State.SPEAKING),
             pystray.MenuItem("Allow interruptions (barge-in)", lambda: self.toggle_barge_in(),
@@ -432,7 +437,7 @@ class App:
             self.snapshot,
             actions={"mic": self.toggle_mute, "stop": self.cancel_reply, "link": self.leave},
             menu_items=[
-                (lambda: "Unmute microphone" if (self.session and self.session.muted) else "Mute microphone", self.toggle_mute),
+                (lambda: "Unmute microphone" if self.mic_muted else "Mute microphone", self.toggle_mute),
                 ("Stop talking", self.cancel_reply),
                 (None, None),
                 (lambda: f"Leave {self.bot.display}", self.leave),
