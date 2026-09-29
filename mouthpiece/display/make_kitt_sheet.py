@@ -1,4 +1,5 @@
-"""Generate the KITT face sprite sheet: sheets/kitt.png + kitt.json + kitt_bg.png.
+"""Generate the KITT face sprite sheet: sheets/kitt.png + kitt.json + kitt_bg.png
+(and kitt_landscape.* for the 480x320 layout).
 
 The sheet is the portable part of a face: a PNG atlas plus a JSON index of
 named frames ({"frames": {name: [x, y, w, h]}}), and a full-size background
@@ -11,13 +12,13 @@ Usage: python -m mouthpiece.display.make_kitt_sheet
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = Path(__file__).resolve().parent / "sheets"
 
-W, H = 320, 480
 BLACK = (0, 0, 0)
 FONT_PATH = r"C:\Windows\Fonts\bahnschrift.ttf"
 
@@ -50,24 +51,66 @@ def apply_style(style: dict) -> None:
     GREEN = _hex(pal.get("ok", "#3CDC5A"))
     GREEN_DIM = tuple(int(c * 0.2) for c in GREEN)
 
-# ---- layout constants shared with kitt.py (keep in sync) -------------------
+# ---- layouts (shared with kitt.py) ------------------------------------------
 BOX_W, BOX_GAP = 96, 8
 SCAN_LAMP = (32, 24)
 VOICE_SEG = (58, 9)
-LAMP = (96, 40)
 BAR_SEG = (8, 16)
 BIG_DIGIT = (18, 30)
 SMALL_DIGIT = (11, 20)
+
+
+def box_x(i, w=320):
+    return (w - (3 * BOX_W + 2 * BOX_GAP)) // 2 + i * (BOX_W + BOX_GAP)
+
+
+@dataclass
+class KittLayout:
+    w: int
+    h: int
+    voice_panel: tuple[int, int, int, int]
+    voice_x0: int
+    col_gap: int
+    scan_box: tuple[int, int, int, int]
+    scan_x0: int
+    scan_pitch: int
+    lamp: tuple[int, int]                              # mode lamp size
+    lamps: list[tuple[int, int]]                       # listen, think, speak positions
+    bars: list[tuple[str, int, int, int]]              # label, label x, bar x, y (segment top)
+    bar_segs: int
+    readouts: list[tuple[str, tuple[int, int, int, int], tuple[int, int], int, str]]
+    #          label, box, digits tile pos, digits tile width, align
+    clock: tuple[int, int]
+    mute: tuple[int, int]
+    voice_mid_y: int = 137
+    scan_y: int = 246
+    suffix: str = ""
+    lamp_font: int = 15
+
+
+PORTRAIT = KittLayout(
+    320, 480, (10, 46, 310, 228), 39, 34, (4, 234, 316, 282), 14, 37,
+    (96, 40), [(box_x(i), 292) for i in range(3)],
+    [("CPU", 12, 56, 352), ("GPU", 12, 56, 380)], 25,
+    [(label, (box_x(i), 410, box_x(i) + BOX_W, 472), (box_x(i) + 4, 434), BOX_W - 8, "center")
+     for i, label in enumerate(("CPU %", "GPU °C", "RAM %"))],
+    (222, 11), (150, 12))
+
+LANDSCAPE = KittLayout(
+    480, 320, (8, 46, 290, 228), 42, 20, (4, 234, 476, 282), 22, 58,
+    (54, 34), [(298 + i * 60, 46) for i in range(3)],
+    [("CPU", 12, 44, 294), ("GPU", 246, 278, 294)], 18,
+    [(label, (298, y, 472, y + 42), (384, y + 6), 80, "right")
+     for label, y in (("CPU %", 88), ("GPU °C", 136), ("RAM %", 184))],
+    (382, 11), (208, 12), suffix="_landscape", lamp_font=13)
+
+LAYOUTS = {"portrait": PORTRAIT, "landscape": LANDSCAPE}
 
 
 def font(size, style="SemiBold Condensed"):
     f = ImageFont.truetype(FONT_PATH, size)
     f.set_variation_by_name(style)
     return f
-
-
-def box_x(i):
-    return (W - (3 * BOX_W + 2 * BOX_GAP)) // 2 + i * (BOX_W + BOX_GAP)
 
 
 def scale(c, k):
@@ -89,7 +132,8 @@ def glyph(ch, size, color, fnt):
     return img
 
 
-def frames() -> dict[str, Image.Image]:
+def frames(L: KittLayout = PORTRAIT) -> dict[str, Image.Image]:
+    LAMP = L.lamp
     f: dict[str, Image.Image] = {}
     # Scanner lamp brightness levels (x = offline, 0 = resting, 4 = head), red and amber.
     for tag, color in (("r", RED), ("a", AMBER)):
@@ -100,7 +144,7 @@ def frames() -> dict[str, Image.Image]:
     f["voice_on"] = rect(VOICE_SEG, RED)
     f["voice_off"] = rect(VOICE_SEG, RED_DIM)
     # Mode lamps.
-    lf = font(15, "Bold Condensed")
+    lf = font(L.lamp_font, "Bold Condensed")
     for name, (on, off) in (("listen", (GREEN, GREEN_DIM)), ("think", (AMBER, AMBER_DIM)), ("speak", (RED, RED_DIM))):
         for lit in (True, False):
             img = Image.new("RGB", LAMP, BLACK)
@@ -109,7 +153,8 @@ def frames() -> dict[str, Image.Image]:
                                 fill=on if lit else BLACK, outline=on if lit else off, width=2)
             label = name.upper()
             tw = d.textlength(label, font=lf)
-            d.text(((LAMP[0] - tw) / 2, 10), label, fill=BLACK if lit else scale(off, 2.2), font=lf)
+            d.text(((LAMP[0] - tw) / 2, (LAMP[1] - L.lamp_font) / 2 - 2), label,
+                   fill=BLACK if lit else scale(off, 2.2), font=lf)
             f[f"lamp_{name}_{'on' if lit else 'off'}"] = img
     # LED bar segments.
     for tag, (on, off) in (("g", (GREEN, GREEN_DIM)), ("a", (AMBER, AMBER_DIM)), ("r", (RED, RED_DIM))):
@@ -134,20 +179,22 @@ def frames() -> dict[str, Image.Image]:
     return f
 
 
-def background() -> Image.Image:
-    bg = Image.new("RGB", (W, H), BLACK)
+def background(L: KittLayout = PORTRAIT) -> Image.Image:
+    bg = Image.new("RGB", (L.w, L.h), BLACK)
     d = ImageDraw.Draw(bg)
     d.text((12, 8), "K.I.T.T.", fill=RED, font=font(24, "Bold Condensed"))
-    d.line([(12, 38), (W - 12, 38)], fill=RED_LINE, width=1)
-    d.rounded_rectangle((10, 46, 310, 228), radius=6, outline=RED_LINE, width=1)
-    d.rounded_rectangle((4, 234, W - 4, 282), radius=4, outline=RED_LINE, width=1)
-    d.text((12, 351), "CPU", fill=AMBER, font=font(14))
-    d.text((12, 379), "GPU", fill=AMBER, font=font(14))
-    for i, label in enumerate(["CPU %", "GPU °C", "RAM %"]):
-        x = box_x(i)
-        d.rounded_rectangle((x, 410, x + BOX_W, 472), radius=4, outline=AMBER_DIM, width=1)
-        tw = d.textlength(label, font=font(12))
-        d.text((x + (BOX_W - tw) / 2, 415), label, fill=AMBER, font=font(12))
+    d.line([(12, 38), (L.w - 12, 38)], fill=RED_LINE, width=1)
+    d.rounded_rectangle(L.voice_panel, radius=6, outline=RED_LINE, width=1)
+    d.rounded_rectangle(L.scan_box, radius=4, outline=RED_LINE, width=1)
+    for label, lx, _, y in L.bars:
+        d.text((lx, y - 1), label, fill=AMBER, font=font(14))
+    for label, (x0, y0, x1, y1), _, _, align in L.readouts:
+        d.rounded_rectangle((x0, y0, x1, y1), radius=4, outline=AMBER_DIM, width=1)
+        if align == "center":
+            tw = d.textlength(label, font=font(12))
+            d.text((x0 + (x1 - x0 - tw) / 2, y0 + 5), label, fill=AMBER, font=font(12))
+        else:
+            d.text((x0 + 8, (y0 + y1) / 2), label, fill=AMBER, font=font(12), anchor="lm")
     return bg
 
 
@@ -169,24 +216,27 @@ def pack(named: dict[str, Image.Image], width: int = 512) -> tuple[Image.Image, 
     return sheet, index
 
 
-def build(out: Path, style: dict | None = None) -> Path:
-    """Write kitt.png/kitt.json/kitt_bg.png into `out`; returns the index path."""
+def build(out: Path, style: dict | None = None, orientation: str = "portrait") -> Path:
+    """Write kitt{suffix}.png/.json/_bg.png into `out`; returns the index path."""
     if style:
         apply_style(style)
+    L = LAYOUTS[orientation]
+    name = f"kitt{L.suffix}"
     out.mkdir(parents=True, exist_ok=True)
-    sheet, index = pack(frames())
-    sheet.save(out / "kitt.png")
-    background().save(out / "kitt_bg.png")
-    (out / "kitt.json").write_text(json.dumps({"image": "kitt.png", "background": "kitt_bg.png",
-                                               "size": [W, H], "frames": index}, indent=1))
-    return out / "kitt.json"
+    sheet, index = pack(frames(L))
+    sheet.save(out / f"{name}.png")
+    background(L).save(out / f"{name}_bg.png")
+    (out / f"{name}.json").write_text(json.dumps({"image": f"{name}.png", "background": f"{name}_bg.png",
+                                                  "size": [L.w, L.h], "frames": index}, indent=1))
+    return out / f"{name}.json"
 
 
 def main() -> None:
     from .registry import load_style
     style = load_style("kitt")
-    idx = build(OUT, style)
-    print(f"{idx} ({'registry style' if style else 'fallback colours'})")
+    for orientation in LAYOUTS:
+        idx = build(OUT, style, orientation)
+        print(f"{idx} ({'registry style' if style else 'fallback colours'})")
 
 
 if __name__ == "__main__":

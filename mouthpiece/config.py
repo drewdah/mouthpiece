@@ -79,7 +79,8 @@ class Config:
     desk_state: bool = False               # publish voice state for desk displays (see deskstate.py)
     # Faces: where the bot shows up. Each surface can be switched off from the tray.
     show_stage: bool = True                # floating desktop stage (avatar + captions)
-    turing: Optional[dict] = None          # desk panel: {"port": "AUTO", "brightness": 50, "enabled": true, "registry": "<cast folder>"}
+    turing: Optional[dict] = None          # desk panels: {"brightness": 50, "enabled": true, "registry": "<cast folder>",
+    #                                        "panels": [{"port": "<USB location|COMn|AUTO>", "orientation": "portrait|landscape"}]}
     bots: list[Bot] = field(default_factory=list)
     raw: dict = field(default_factory=dict, repr=False)
     path: Path = field(default_factory=lambda: CONFIG_PATH, repr=False)

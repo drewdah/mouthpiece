@@ -68,8 +68,13 @@ class TileFace:
     def set(self, name: str, frame: str) -> None:
         self.slots[name].want = frame
 
-    def invalidate(self) -> None:
-        """Forget what is on the glass (after drawing the background)."""
+    @property
+    def background(self) -> Image.Image:
+        return self.atlas.background if self.atlas.background else Image.new("RGB", self.atlas.size)
+
+    def invalidate(self, glass: Optional[Image.Image] = None) -> None:
+        """Forget what is on the glass. Slots are unknown either way: after the
+        background is drawn (glass given) every slot still has to be sent."""
         for s in self.slots.values():
             s.shown = None
 

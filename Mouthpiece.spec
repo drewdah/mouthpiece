@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('mouthpiece/stage/fonts', 'mouthpiece/stage/fonts'), ('mouthpiece/display/sheets', 'mouthpiece/display/sheets')]
 binaries = []
-hiddenimports = ['mouthpiece.stage.baymax', 'mouthpiece.stage.wheatley', 'mouthpiece.stage.kitt', 'mouthpiece.display.kitt', 'keyboard']
+hiddenimports = ['mouthpiece.stage.baymax', 'mouthpiece.stage.wheatley', 'mouthpiece.stage.kitt', 'mouthpiece.display.kitt', 'mouthpiece.display.baymax', 'mouthpiece.display.wheatley', 'keyboard']
 tmp_ret = collect_all('livekit')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('sounddevice')

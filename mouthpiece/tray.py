@@ -121,8 +121,8 @@ class App:
 
     def _start_panel(self) -> None:
         try:
-            from .display.kitt import KittFace
-            self.face = KittFace(self.cfg.turing, self._face_source)
+            from .display.host import DeskPanels
+            self.face = DeskPanels(self.cfg.turing, self._face_source, lambda: self.bot.id)
             self.face.start()
         except Exception:
             log.exception("desk panel disabled")

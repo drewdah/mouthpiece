@@ -28,15 +28,23 @@ CMD_SET_BRIGHTNESS = 110
 CMD_SET_ORIENTATION = 121
 CMD_DISPLAY_BITMAP = 197
 CMD_HELLO = 69
-PORTRAIT = 0
+PORTRAIT, LANDSCAPE = 0, 2
 BYTES_PER_SEC = 160_000     # measured link throughput
 CHUNK = 320 * 8             # bytes per serial write
 
 
-def find_port() -> Optional[str]:
-    for p in list_ports.comports():
-        if p.serial_number == SERIAL_NO or (p.vid == VID and p.pid == PID):
-            return p.device
+def panels() -> list[tuple[str, str]]:
+    """(COM port, USB location) of every connected panel. Two panels can share
+    the serial string, so the USB location (which socket it is plugged into) is
+    what tells them apart; it survives the reset, the COM number may not."""
+    return [(p.device, p.location or "") for p in list_ports.comports()
+            if p.serial_number == SERIAL_NO or (p.vid == VID and p.pid == PID)]
+
+
+def find_port(location: Optional[str] = None) -> Optional[str]:
+    for dev, loc in panels():
+        if not location or loc == location:
+            return dev
     return None
 
 
@@ -52,17 +60,26 @@ def _header(cmd: int, x: int, y: int, ex: int, ey: int) -> bytes:
 
 
 class TuringRevA:
-    width, height = 320, 480
+    """port: "AUTO" (first panel found), "COM10", or a USB location like "1-10.2".
+    orientation: "portrait" (320x480) or "landscape" (480x320)."""
 
-    def __init__(self, port: str = "AUTO") -> None:
+    def __init__(self, port: str = "AUTO", orientation: str = "portrait") -> None:
         self.port = port
+        self.landscape = orientation == "landscape"
+        self.width, self.height = (480, 320) if self.landscape else (320, 480)
         self.ser: Optional[serial.Serial] = None
         self.bytes_sent = 0
 
     def _port(self) -> str:
-        dev = find_port() if self.port.upper() == "AUTO" else self.port
+        p = self.port or "AUTO"
+        if p.upper() == "AUTO":
+            dev = find_port()
+        elif p.upper().startswith("COM") or p.startswith("/dev/"):
+            dev = p
+        else:
+            dev = find_port(p)
         if not dev:
-            raise OSError("Turing screen not found (VID 1A86 PID 5722)")
+            raise OSError(f"Turing screen not found ({p})")
         return dev
 
     def open(self) -> None:
@@ -71,15 +88,26 @@ class TuringRevA:
         with serial.Serial(self._port(), 115200, timeout=1, write_timeout=5, rtscts=True) as s:
             s.write(_header(CMD_RESET, 0, 0, 0, 0))
             s.flush()
-        time.sleep(5)                       # the COM port can change across the reset
-        dev = self._port()
+        # The panel drops off USB while it reboots: ~4 s for one unit, ~7 s for
+        # another. Wait for it to come back (the COM port can change).
+        time.sleep(3)
+        deadline = time.monotonic() + 20
+        while True:
+            try:
+                dev = self._port()
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.25)
+        time.sleep(1.0)                     # enumerated is not quite ready
         self.ser = serial.Serial(dev, 115200, timeout=1, write_timeout=5, rtscts=True)
         # HELLO: the official 3.5" does not answer; drain whatever comes back.
         self.ser.write(bytes([CMD_HELLO] * 6))
         self.ser.read(6)
         self.ser.reset_input_buffer()
         orient = bytearray(_header(CMD_SET_ORIENTATION, 0, 0, 0, 0)) + bytes(10)
-        orient[6] = PORTRAIT + 100
+        orient[6] = (LANDSCAPE if self.landscape else PORTRAIT) + 100
         orient[7:11] = bytes([self.width >> 8, self.width & 255, self.height >> 8, self.height & 255])
         self.ser.write(bytes(orient))
         # Other tools (InfoPanel) send SCREEN_OFF when they exit; the panel then
