@@ -24,12 +24,41 @@ FONT = "Segoe UI"
 _FONT_CACHE: dict = {}
 
 
-def fit_text(text: str, font: tuple, max_px: float) -> str:
-    """Truncate with an ellipsis so the rendered width fits max_px."""
+def _font(font: tuple) -> tkfont.Font:
     f = _FONT_CACHE.get(font)
     if f is None:
         weight = font[2] if len(font) > 2 else "normal"
         f = _FONT_CACHE[font] = tkfont.Font(family=font[0], size=font[1], weight=weight)
+    return f
+
+
+def wrap_lines(text: str, font: tuple, max_px: float) -> list[str]:
+    """Word-wrap to max_px the way we want to show it (Tk won't tell us where it wraps)."""
+    f = _font(font)
+    lines: list[str] = []
+    for para in text.split("\n"):
+        line = ""
+        for word in para.split():
+            cand = f"{line} {word}" if line else word
+            if f.measure(cand) <= max_px:
+                line = cand
+                continue
+            if line:
+                lines.append(line)
+            while f.measure(word) > max_px:          # a single over-long word: hard-split it
+                cut = len(word)
+                while cut > 1 and f.measure(word[:cut]) > max_px:
+                    cut -= 1
+                lines.append(word[:cut])
+                word = word[cut:]
+            line = word
+        lines.append(line)
+    return lines
+
+
+def fit_text(text: str, font: tuple, max_px: float) -> str:
+    """Truncate with an ellipsis so the rendered width fits max_px."""
+    f = _font(font)
     if f.measure(text) <= max_px:
         return text
     lo, hi = 0, len(text)
@@ -63,6 +92,7 @@ class EntitySkin:
     accent = "#FF6B8A"
     body_light = "#FFFFFF"
     text_on_bubble = "#1A1A1A"
+    thinking_dots = True  # thought dots above the head while thinking; a skin can show its own cue instead
 
     # layout bands (fractions of height)
     BUBBLE_H = 118
@@ -162,10 +192,11 @@ class EntitySkin:
         fill = hex_lerp(self.accent, "#ffffff", 0.82)
         edge = self.accent
         if state == "thinking":
-            # thought dots while he works on it
-            for i, r in enumerate((4, 6, 9)):
-                cy = hy - 14 - i * 16
-                cv.create_oval(hx - r + i * 10, cy - r, hx + r + i * 10, cy + r, fill=fill, outline=edge, width=2)
+            if self.thinking_dots:
+                # thought dots while he works on it
+                for i, r in enumerate((4, 6, 9)):
+                    cy = hy - 14 - i * 16
+                    cv.create_oval(hx - r + i * 10, cy - r, hx + r + i * 10, cy + r, fill=fill, outline=edge, width=2)
             return
         if not fresh:
             return
@@ -173,18 +204,22 @@ class EntitySkin:
         bw = w - 24
         x0, x1 = 12, 12 + bw
         y1 = hy - 16
-        # measure text height by creating it first
-        tid = cv.create_text(x0 + pad, 0, text=b.text, anchor="nw", width=bw - 2 * pad,
-                             font=(FONT, 9), fill=self.text_on_bubble)
-        bb = cv.bbox(tid)
-        th = (bb[3] - bb[1]) if bb else 14
-        y0 = max(4, y1 - th - 2 * pad)
-        cv.delete(tid)
+        font = (FONT, 9)
+        # The bubble grows up from the head and must stay inside the window: a long reply shows
+        # its newest lines (what he's saying now) and an ellipsis; the full text is in the strip.
+        line_h = _font(font).metrics("linespace")
+        max_lines = max(1, int((y1 - 4 - 2 * pad) // line_h))
+        lines = wrap_lines(b.text, font, bw - 2 * pad)
+        if len(lines) > max_lines:
+            lines = lines[-max_lines:]
+            lines[0] = "… " + lines[0]
+            if _font(font).measure(lines[0]) > bw - 2 * pad:
+                lines[0] = fit_text(lines[0], font, bw - 2 * pad)
+        y0 = y1 - len(lines) * line_h - 2 * pad
         rounded_rect(cv, x0, y0, x1, y1, 12, fill=fill, outline=edge, width=2)
         cv.create_polygon(hx - 10, y1 - 1, hx + 6, y1 - 1, hx, y1 + 12, fill=fill, outline=edge, width=2, smooth=False)
         cv.create_line(hx - 9, y1, hx + 5, y1, fill=fill, width=3)
-        cv.create_text(x0 + pad, y0 + pad, text=b.text, anchor="nw", width=bw - 2 * pad,
-                       font=(FONT, 9), fill=self.text_on_bubble)
+        cv.create_text(x0 + pad, y0 + pad, text="\n".join(lines), anchor="nw", font=font, fill=self.text_on_bubble)
 
     def paint_controls(self, cv, w, h, state, muted, hover, pressed) -> None:
         """Three round controls floating just under the transcript strip."""
