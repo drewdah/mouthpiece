@@ -90,6 +90,7 @@ class App:
         self.thread.start()
         self.session: Optional[VoiceSession] = None
         self.bot: Bot = self.cfg.bot()
+        self.mic_muted = False      # last mute choice; new sessions (bot switch, rejoin) start with it
         self.last_transcript: str = ""
         self.captions: list[tuple[str, str, bool, str, int]] = []   # who, text, final, kind, id
         self.stage = None  # set by main() when the stage runs on the main thread
@@ -154,6 +155,8 @@ class App:
         return {"state": self.state.value, "muted": bool(s and s.muted), "audio": s.audio if s else None}
 
     def _on_session_event(self, kind: str, data: dict) -> None:
+        if kind == "muted":
+            self.mic_muted = bool(data.get("muted"))
         if self.desk and kind in ("state", "muted"):
             self.desk.update(self.state.value, self.bot.id, bool(self.session and self.session.muted))
         if kind == "state":
@@ -231,7 +234,7 @@ class App:
             self.bot = bot
         if self.session and self.state not in (State.OFF, State.ERROR):
             return
-        self.session = VoiceSession(self.cfg, self.bot, self.loop)
+        self.session = VoiceSession(self.cfg, self.bot, self.loop, muted=self.mic_muted)
         self.session.on(self._on_session_event)
         self._call(self.session.join())
 
@@ -239,7 +242,7 @@ class App:
         if self.session:
             await self.session.leave()
         self.bot = bot
-        self.session = VoiceSession(self.cfg, self.bot, self.loop)
+        self.session = VoiceSession(self.cfg, self.bot, self.loop, muted=self.mic_muted)
         self.session.on(self._on_session_event)
         await self.session.join()
 

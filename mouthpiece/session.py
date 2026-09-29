@@ -81,10 +81,11 @@ Listener = Callable[[str, dict], None]
 
 
 class VoiceSession:
-    def __init__(self, cfg: Config, bot: Bot, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(self, cfg: Config, bot: Bot, loop: asyncio.AbstractEventLoop, muted: bool = False) -> None:
         self.cfg = cfg
         self.bot = bot
         self.loop = loop
+        self._start_muted = muted    # carried over from the previous session (mute is sticky)
         self.state = State.OFF
         self.error: str = ""
         self.room: Optional[rtc.Room] = None
@@ -161,6 +162,7 @@ class VoiceSession:
                              noise_suppression=self.cfg.noise_suppression,
                              auto_gain_control=self.cfg.auto_gain_control)
         self.audio.gate_while_playing = not self.cfg.barge_in
+        self.audio.muted = self._start_muted       # before the mic is published: nothing leaks
         try:
             self.audio.start()
         except Exception as e:
@@ -173,6 +175,8 @@ class VoiceSession:
         await room.local_participant.publish_track(self._mic_track, opts)
         log.info("mic published; remote participants: %s", [p.identity for p in room.remote_participants.values()])
         self._set_state(State.IN_ROOM)
+        if self._start_muted:
+            self._emit("muted", {"muted": True})
         self._emit("joined", {"room": m.room, "participants": [p.identity for p in room.remote_participants.values()]})
         for p in room.remote_participants.values():
             self._on_participant_connected(p)
