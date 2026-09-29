@@ -5,3 +5,7 @@ pystray>=0.19.5
 Pillow>=10.0
 keyboard>=0.13.5
 livekit-api>=1.0
+pyserial>=3.5
+psutil>=5.9
+nvidia-ml-py>=12.0
+PyYAML>=6.0

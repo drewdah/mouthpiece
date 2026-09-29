@@ -53,6 +53,7 @@ class AudioIO:
         self.gated = False        # True while the guard is currently silencing the mic
         self.mic_level = 0.0      # 0..1 RMS of what we send
         self.speaker_level = 0.0  # 0..1 RMS of what we play
+        self.speaker_peak = 0.0   # max speaker_level since a reader last reset it (desk face)
         self._play = deque()      # int16 numpy chunks from the agent
         self._play_lock = threading.Lock()
         self._carry = np.zeros(0, dtype=np.int16)
@@ -165,6 +166,7 @@ class AudioIO:
             self._underruns += 1
         outdata[:, 0] = out
         self.speaker_level = _rms(out)
+        self.speaker_peak = max(self.speaker_peak, self.speaker_level)
         # The agent's track streams silence continuously, so "frames arrived" is not
         # "the bot is talking". Only real energy counts as playback for the echo guard.
         if pos > 0 and self.speaker_level > 0.004:

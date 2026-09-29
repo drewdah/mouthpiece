@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw
 
 from . import __version__
 from .config import Bot, Config, ConfigMissing
+from .deskstate import DeskState
 from .hotkeys import Hotkeys
 from .session import State, VoiceSession
 from .trigger import TriggerServer
@@ -92,6 +93,10 @@ class App:
         self.last_transcript: str = ""
         self.captions: list[tuple[str, str, bool, str, int]] = []   # who, text, final, kind, id
         self.stage = None  # set by main() when the stage runs on the main thread
+        self.desk = DeskState(self.cfg.bots) if self.cfg.desk_state else None
+        self.face = None
+        if self.panel_enabled:
+            self._start_panel()
         self.trigger = TriggerServer(self, port=self.cfg.trigger_port)
         self.hotkeys = Hotkeys(self.cfg.hotkeys, {"toggle_mute": self.toggle_mute, "toggle_join": self.toggle_join,
                                                   "stop": self.cancel_reply})
@@ -109,7 +114,48 @@ class App:
     def state(self) -> State:
         return self.session.state if self.session else State.OFF
 
+    # ---- faces (surfaces the bot shows up on) --------------------------------
+    @property
+    def panel_enabled(self) -> bool:
+        return bool(self.cfg.turing) and self.cfg.turing.get("enabled", True)
+
+    def _start_panel(self) -> None:
+        try:
+            from .display.kitt import KittFace
+            self.face = KittFace(self.cfg.turing, self._face_source)
+            self.face.start()
+        except Exception:
+            log.exception("desk panel disabled")
+            self.face = None
+
+    def toggle_panel(self) -> None:
+        """Desk panel on/off. Off blanks the screen's backlight and frees the port."""
+        if not self.cfg.turing:
+            return
+        on = not self.panel_enabled
+        self.cfg.turing["enabled"] = on
+        self.cfg.save()
+        if on and self.face is None:
+            self._start_panel()
+        elif not on and self.face is not None:
+            face, self.face = self.face, None
+            threading.Thread(target=face.stop, kwargs={"blank": True}, daemon=True).start()
+        log.info("desk panel %s", "on" if on else "off")
+
+    def toggle_stage(self) -> None:
+        """Floating desktop stage on/off (the panel keeps running either way)."""
+        self.cfg.show_stage = not self.cfg.show_stage
+        self.cfg.save()
+        log.info("desktop stage %s", "shown" if self.cfg.show_stage else "hidden")
+
+    def _face_source(self) -> dict:
+        """Called from the face thread each frame; plain reads only."""
+        s = self.session
+        return {"state": self.state.value, "muted": bool(s and s.muted), "audio": s.audio if s else None}
+
     def _on_session_event(self, kind: str, data: dict) -> None:
+        if self.desk and kind in ("state", "muted"):
+            self.desk.update(self.state.value, self.bot.id, bool(self.session and self.session.muted))
         if kind == "state":
             self._refresh()
             if data.get("state") == State.ERROR.value and data.get("error"):
@@ -146,7 +192,7 @@ class App:
         st = self.state
         a = self.session.audio if self.session else None
         return {
-            "visible": st not in (State.OFF, State.ERROR),
+            "visible": st not in (State.OFF, State.ERROR) and self.cfg.show_stage,
             "state": st.value,
             "muted": bool(self.session and self.session.muted),
             "gated": bool(a and a.gated),
@@ -275,6 +321,8 @@ class App:
             except Exception:
                 pass
             self.loop.call_soon_threadsafe(self.loop.stop)
+            if self.face:
+                self.face.stop()
             self.icon.stop()
             if self.stage is not None:
                 self.stage.close()
@@ -357,6 +405,13 @@ class App:
                              checked=lambda item: self.cfg.barge_in),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Bot", pystray.Menu(bot_items)),
+            pystray.MenuItem("Faces", pystray.Menu(
+                pystray.MenuItem("Desktop stage", lambda: self.toggle_stage(),
+                                 checked=lambda item: self.cfg.show_stage),
+                pystray.MenuItem("Desk panel", lambda: self.toggle_panel(),
+                                 checked=lambda item: self.panel_enabled,
+                                 visible=lambda item: bool(self.cfg.turing)),
+            )),
             pystray.MenuItem("Microphone device", self._device_menu("input")),
             pystray.MenuItem("Speaker device", self._device_menu("output")),
             pystray.Menu.SEPARATOR,

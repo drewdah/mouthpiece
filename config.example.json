@@ -15,6 +15,8 @@
   "auto_gain_control": false,
   "barge_in": false,
   "log_file": "mouthpiece.log",
+  "desk_state": false,
+  "turing": null,
   "bots": [
     {
       "id": "kitt",
