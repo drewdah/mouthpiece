@@ -196,8 +196,11 @@ class VoiceSession:
             self.agent_ready.set()
             log.info("agent %s (%s) is in the room", p.identity, p.name)
             self._emit("agent_ready", {"identity": p.identity, "name": p.name})
-            if self.audio and self.audio.muted:
-                self.loop.create_task(self._send(TOPIC_EXT, {"type": "hermes.input_audio.state", "muted": True}))
+            # Always the current state, unmuted too: the voice body remembers a mute from an
+            # earlier session, and an unmute sent before it arrived was dropped (2026-10-06:
+            # Mouthpiece unmuted, the agent still ignoring the mic).
+            muted = bool(self.audio.muted) if self.audio else bool(self._start_muted)
+            self.loop.create_task(self._send(TOPIC_EXT, {"type": "hermes.input_audio.state", "muted": muted}))
 
     def _on_participant_disconnected(self, p: rtc.RemoteParticipant) -> None:
         self._emit("participant", {"identity": p.identity, "joined": False})

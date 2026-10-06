@@ -244,3 +244,31 @@ def test_ptt_combo_is_refused(kb):
     p = Mic(True).ptt("ctrl+space")
     assert p.start(kb) is False
     assert kb.press == {}
+
+
+def test_the_agent_arriving_gets_the_current_mute_state_even_when_unmuted():
+    # Regression (2026-10-06): only a mute was re-sent on arrival, so a voice body that still
+    # remembered an earlier mute kept ignoring the mic after an unmute sent before it arrived.
+    import asyncio
+    from types import SimpleNamespace
+    from mouthpiece.config import Bot
+    from mouthpiece.session import VoiceSession
+
+    loop = asyncio.new_event_loop()
+    try:
+        s = VoiceSession(SimpleNamespace(), Bot("kitt", "KITT", "kitt-room"), loop)
+        sent = []
+
+        async def fake_send(topic, msg):
+            sent.append((topic, msg))
+
+        s._send = fake_send
+        for muted in (False, True):
+            sent.clear()
+            s.agent_ready.clear()
+            s.audio = SimpleNamespace(muted=muted)
+            s._on_participant_connected(SimpleNamespace(identity="hermes-kitt", name="KITT"))
+            loop.run_until_complete(asyncio.sleep(0))
+            assert ("conference.extensions", {"type": "hermes.input_audio.state", "muted": muted}) in sent
+    finally:
+        loop.close()
