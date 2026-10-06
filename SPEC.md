@@ -94,7 +94,8 @@ tray (pystray, main thread)          asyncio loop thread
 | `mouthpiece/session.py` | `VoiceSession`: join / leave / mute / send_text, room events → `State` enum (`off, joining, in room, listening, thinking, speaking, error`), transcripts, observer callbacks. |
 | `mouthpiece/tray.py` | pystray app, menu, status line, log file (`mouthpiece.log`, no secrets), single-instance lock. |
 | `mouthpiece/hotkeys.py` | Global hotkeys (mute toggle, join/leave toggle). |
-| `mouthpiece/trigger.py` | `127.0.0.1:18760` HTTP: `POST /join/<bot>`, `/leave`, `/mute`, `/unmute`, `/toggle-mute`, `GET /status`. For Stream Deck "Website"/"System: Open" actions or a small plugin later. |
+| `mouthpiece/trigger.py` | `127.0.0.1:18760` HTTP: `POST /join/<bot>`, `/leave`, `/mute`, `/unmute`, `/toggle-mute`, `GET /status` (includes `"events": 1`), `GET /events` (SSE, below). For Stream Deck "Website"/"System: Open" actions, Candypanel, or a small plugin later. |
+| `mouthpiece/events.py` | `EventHub` on the App (survives bot switches): fans session events out to `/events` clients through bounded per-client queues (full: drop oldest `level`, then drop the client), polls status for changes, samples levels at 100 Hz and publishes the max at 20 Hz while in a room. Keeps its own speaker peak, since the desk face resets `AudioIO.speaker_peak`. |
 | `mouthpiece/stage/` | Stage window (always-on-top, frameless, transparent). Skin API: `paint(state, mic_level, spk_level, transcript_tail, t)`. First skin `kitt` ported from cast-skins. |
 | `spike.py` | Terminal runner used to prove the path. Stays as the debug tool. |
 
@@ -108,6 +109,25 @@ no extra dependency, easy transparent/topmost window on Windows via `-transparen
 `bots[]` in config: `{id, display, room, accent, skin, profile}`. Adding a bot on the lab = clone a
 Hermes profile, give it its own `platforms.livekit.extra.room` + `agent_name` + Pocket voice, run its
 gateway as a service. Mouthpiece joins one room at a time; switching bots = leave + join.
+
+### 3.4 Event stream (`GET /events`, added 2026-10-05 for Candypanel)
+Server-Sent Events on the trigger port: `Content-Type: text/event-stream`, frames
+`event: <name>\ndata: <one-line JSON>\n\n`, keepalive comment `: ping` every 15 s. Several clients at
+once; subscribed at the App level so a stream survives bot switches. Each client has a bounded queue:
+when full, its oldest `level` frame is dropped, and if there is none the client is disconnected.
+`/status` carries `"events": 1` so a client can tell the stream exists.
+
+| Event | Data | When |
+|---|---|---|
+| `status` | the full `/status` dict `{state, bot, bot_display, muted, error, bots, events}` | first frame on connect, then whenever state, bot, muted or error changes |
+| `transcript` | `{bot, who: "user"\|"agent", id, text, final, seq, kind, ts}` | every caption update. `text` is cumulative for the line; `id` is stable across a line's partials and its final; `kind` is `reply` / `system` / `silent`; `ts` is epoch ms (line start) |
+| `level` | `{bot, mic, spk}` RMS floats 0..1 | ~20 Hz while in a room (not `off`/`joining`/`error`); each is the max of 100 Hz samples since the last `level` |
+| `interrupted` | `{bot}` | the reply was cut off: the agent's `output_audio_buffer.cleared`, or a local `/stop` while thinking/speaking (deduped within 1 s) |
+| `agent` | `{bot, identity, ready: true}` | the agent participant arrived |
+
+Transcript lines: `agent:agent-transcript` with `final: false` (clause streaming; cumulative text) is a
+live partial of the same line, as are the realtime `response.output_audio_transcript.delta`s and
+`agent:user-transcript` partials; the final reuses the partials' id.
 
 ---
 

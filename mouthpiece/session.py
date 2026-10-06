@@ -100,6 +100,7 @@ class VoiceSession:
         self.agent_ready = asyncio.Event()
         self._partial = ""
         self._next_id = 1
+        self._live: dict[str, Transcript] = {}             # who -> line still receiving partials
         self._pending_reply: Optional[Transcript] = None   # reply awaiting its audio
         self._resp_had_audio = False
         self.response_seq = 0        # bumps when a new reply starts
@@ -315,13 +316,19 @@ class VoiceSession:
             self._add_transcript("you", payload.get("transcript", ""), bool(payload.get("final", True)))
         elif kind in ("response.created", "agent:thinking-start"):
             self._partial = ""
+            self._live.pop(self.bot.display, None)       # a reply that never got its final stays as it was
             self._resp_had_audio = False
             self.response_seq += 1
             self._set_state(State.THINKING)
         elif kind == "response.output_audio_transcript.delta":
             self._partial += payload.get("delta", "") or ""
-            self._emit("transcript", {"who": self.bot.display, "text": self._partial, "final": False, "ts": time.time(),
-                                      "seq": self.response_seq})
+            self._add_transcript(self.bot.display, self._partial, False,
+                                 kind="system" if is_gateway_notice(self._partial) else "reply")
+        elif kind == "agent:agent-transcript" and not payload.get("final", True):
+            # Clause-streaming builds send the cumulative text so far with final=false: a live
+            # partial of the same line, like the realtime deltas above.
+            text = payload.get("transcript", "")
+            self._add_transcript(self.bot.display, text, False, kind="system" if is_gateway_notice(text) else "reply")
         elif kind in ("response.output_audio_transcript.done", "agent:agent-transcript"):
             self._partial = ""
             text = payload.get("transcript", "")
@@ -367,15 +374,26 @@ class VoiceSession:
         text = (text or "").strip()
         if not text or not any(ch.isalnum() for ch in text):
             return None          # glyph-only status pings ("...", a lone emoji) are not captions
-        t = Transcript(who, text, final, kind=kind, id=self._next_id, seq=self.response_seq)
-        self._next_id += 1
-        self.transcripts.append(t)
-        del self.transcripts[:-200]
-        self._emit("transcript", t.__dict__)
+        # Partials and the final of one line share one Transcript (and so one id).
+        t = self._live.get(who)
+        if t is None:
+            t = Transcript(who, text, final, kind=kind, id=self._next_id, seq=self.response_seq)
+            self._next_id += 1
+            self.transcripts.append(t)
+            del self.transcripts[:-200]
+        else:
+            t.text, t.final, t.kind = text, final, kind
+        if final:
+            self._live.pop(who, None)
+        else:
+            self._live[who] = t
+        self._emit("transcript", dict(t.__dict__))
         return t
 
     async def cancel_reply(self) -> None:
         """Local barge-in button: stop the agent's current reply and flush our speaker buffer."""
         if self.audio:
             self.audio.clear_playback()
+        if self.state in (State.THINKING, State.SPEAKING):
+            self._emit("interrupted", {"local": True})
         await self._send(TOPIC_EVENTS, {"type": "response.cancel"})

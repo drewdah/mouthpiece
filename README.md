@@ -105,9 +105,25 @@ Mouthpiece listens on `http://127.0.0.1:18760` (loopback only, GET or POST). In 
 | `/join/<bot id>` · `/leave` · `/toggle` | explicit join, leave, or join/leave the current bot |
 | `/mute` · `/unmute` · `/toggle-mute` | mic |
 | `/stop` | stop the bot talking |
-| `/status` | JSON state |
+| `/status` | JSON state (`state`, `bot`, `bot_display`, `muted`, `error`, `bots`, `events: 1`) |
+| `/events` | live event stream (Server-Sent Events, GET only), see below |
 
 Change the port with `trigger_port` in the config.
+
+### Event stream
+
+`GET /events` keeps the response open and writes `event: <name>` / `data: <one-line JSON>` frames
+(`Content-Type: text/event-stream`), with a `: ping` comment every 15 s. Several clients can listen at
+once; the stream survives bot switches. A client that falls behind loses its oldest `level` frames
+first, and is disconnected if it is still full.
+
+| Event | Data | When |
+|---|---|---|
+| `status` | the `/status` dict | first frame, then whenever state, bot, muted or error changes |
+| `transcript` | `{bot, who: "user"\|"agent", id, text, final, seq, kind, ts}` | every caption update. `text` is the whole line so far; `id` is the same for a line's partials and its final; `kind` is `reply`, `system` (gateway notice) or `silent` (reply that produced no audio); `ts` is epoch ms |
+| `level` | `{bot, mic, spk}` RMS 0..1 | about 20 Hz while in a room; each value is the max since the previous `level` |
+| `interrupted` | `{bot}` | the bot's reply was cut off (barge-in or `/stop`) |
+| `agent` | `{bot, identity, ready: true}` | the bot's agent joined the room |
 
 ## Run from source
 

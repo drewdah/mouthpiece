@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw
 from . import __version__
 from .config import Bot, Config, ConfigMissing
 from .deskstate import DeskState
+from .events import IDLE_STATES, EventHub
 from .hotkeys import Hotkeys
 from .session import State, VoiceSession
 from .trigger import TriggerServer
@@ -98,6 +99,7 @@ class App:
         self.face = None
         if self.panel_enabled:
             self._start_panel()
+        self.events = EventHub(self.status, self._levels)    # GET /events; outlives bot switches
         self.trigger = TriggerServer(self, port=self.cfg.trigger_port)
         self.hotkeys = Hotkeys(self.cfg.hotkeys, {"toggle_mute": self.toggle_mute, "toggle_join": self.toggle_join,
                                                   "stop": self.cancel_reply})
@@ -153,6 +155,22 @@ class App:
         """Called from the face thread each frame; plain reads only."""
         s = self.session
         return {"state": self.state.value, "muted": self.mic_muted, "audio": s.audio if s else None}
+
+    def _levels(self) -> Optional[tuple[float, float]]:
+        """(mic, speaker) RMS for the event stream while in a room; plain reads, sampler thread."""
+        s = self.session
+        a = s.audio if s else None
+        if a is None or s.state.value in IDLE_STATES:
+            return None
+        return a.mic_level, a.speaker_level
+
+    def _new_session(self) -> VoiceSession:
+        s = VoiceSession(self.cfg, self.bot, self.loop, muted=self.mic_muted)
+        s.on(self._on_session_event)
+        bot_id = self.bot.id
+        s.on(lambda kind, data: self.events.on_session_event(bot_id, kind, data))   # after ours: sees mic_muted
+        self.session = s
+        return s
 
     def _on_session_event(self, kind: str, data: dict) -> None:
         if kind == "muted":
@@ -234,17 +252,13 @@ class App:
             self.bot = bot
         if self.session and self.state not in (State.OFF, State.ERROR):
             return
-        self.session = VoiceSession(self.cfg, self.bot, self.loop, muted=self.mic_muted)
-        self.session.on(self._on_session_event)
-        self._call(self.session.join())
+        self._call(self._new_session().join())
 
     async def _switch(self, bot: Bot) -> None:
         if self.session:
             await self.session.leave()
         self.bot = bot
-        self.session = VoiceSession(self.cfg, self.bot, self.loop, muted=self.mic_muted)
-        self.session.on(self._on_session_event)
-        await self.session.join()
+        await self._new_session().join()
 
     def leave(self) -> None:
         if self.session:
@@ -266,12 +280,13 @@ class App:
             return
         if self.desk:
             self.desk.update(self.state.value, self.bot.id, muted)
+        self.events.check_status()
         self._refresh()
 
     def status(self) -> dict:
         return {"state": self.state.value, "bot": self.bot.id, "bot_display": self.bot.display,
                 "muted": self.mic_muted, "error": self.session.error if self.session else "",
-                "bots": [b.id for b in self.cfg.bots]}
+                "bots": [b.id for b in self.cfg.bots], "events": 1}
 
     def toggle_mute(self) -> None:
         self.set_muted(not self.mic_muted)
@@ -445,6 +460,7 @@ class App:
             config_path=self.cfg.path,
             config_raw=self.cfg.raw,
         )
+        self.events.start()
         self.trigger.start()
         self.hotkeys.start()
         self.icon.run_detached()
@@ -453,6 +469,7 @@ class App:
         finally:
             self.hotkeys.stop()
             self.trigger.stop()
+            self.events.stop()
             try:
                 self.icon.stop()
             except Exception:
