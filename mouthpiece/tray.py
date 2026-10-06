@@ -24,7 +24,7 @@ from . import __version__
 from .config import Bot, Config, ConfigMissing
 from .deskstate import DeskState
 from .events import IDLE_STATES, EventHub
-from .hotkeys import Hotkeys
+from .hotkeys import Hotkeys, PushToTalk
 from .session import State, VoiceSession
 from .trigger import TriggerServer
 
@@ -101,8 +101,10 @@ class App:
             self._start_panel()
         self.events = EventHub(self.status, self._levels)    # GET /events; outlives bot switches
         self.trigger = TriggerServer(self, port=self.cfg.trigger_port)
+        self.ptt = PushToTalk((self.cfg.hotkeys or {}).get("push_to_talk"), self.in_room,
+                              lambda: self.mic_muted, self.set_muted, self.end_turn)
         self.hotkeys = Hotkeys(self.cfg.hotkeys, {"toggle_mute": self.toggle_mute, "toggle_join": self.toggle_join,
-                                                  "stop": self.cancel_reply})
+                                                  "stop": self.cancel_reply}, push_to_talk=self.ptt)
         self.icon = pystray.Icon("mouthpiece", make_icon(STATE_COLORS[State.OFF]), "Mouthpiece", menu=self._build_menu())
 
     def _run_loop(self) -> None:
@@ -291,6 +293,14 @@ class App:
     def toggle_mute(self) -> None:
         self.set_muted(not self.mic_muted)
 
+    def in_room(self) -> bool:
+        return self.session is not None and self.state not in (State.OFF, State.ERROR, State.JOINING)
+
+    def end_turn(self) -> None:
+        """Flush what you've said to the bot now instead of waiting for its silence timeout."""
+        if self.session and self.state not in (State.OFF, State.ERROR):
+            self._call(self.session.end_turn())
+
     def toggle_join(self) -> None:
         if self.state in (State.OFF, State.ERROR):
             self.join()
@@ -440,6 +450,8 @@ class App:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Settings…", lambda: self.open_settings()),
             pystray.MenuItem("Open log", lambda: self.open_log()),
+            pystray.MenuItem(lambda item: f"Push-to-talk: {self.ptt.key}", None, enabled=False,
+                             visible=lambda item: bool(self.ptt.key)),
             pystray.MenuItem(lambda item: f"Trigger: 127.0.0.1:{self.cfg.trigger_port}  ·  hotkeys ctrl+alt+M / J / S", None, enabled=False),
             pystray.MenuItem(f"Mouthpiece {__version__}", None, enabled=False),
             pystray.MenuItem("Quit", lambda: self.quit()),

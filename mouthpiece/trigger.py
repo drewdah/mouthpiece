@@ -8,7 +8,8 @@ built-in "System: Website" action (with "access in background") can drive it wit
   GET  /switch/<bot>          -> join that bot, or leave if already in that bot's room (one button per bot)
   GET  /leave                 -> leave
   GET  /toggle                -> join current bot / leave
-  GET  /mute  /unmute  /toggle-mute
+  GET  /mute  /unmute  /toggle-mute   (muting ends the turn first, so what you said is heard now)
+  GET  /end-turn              -> end your turn now (no 1.2 s silence wait) without muting
   GET  /stop                  -> stop the bot talking
   GET  /events                -> Server-Sent Events stream (see events.py): status, transcript, level,
                                  interrupted, agent. First frame is status; ": ping" every 15 s.
@@ -101,6 +102,8 @@ class TriggerServer:
                         app.set_muted(False)
                     elif verb == "toggle-mute":
                         app.toggle_mute()
+                    elif verb == "end-turn":
+                        app.end_turn()
                     elif verb == "stop":
                         app.cancel_reply()
                     else:

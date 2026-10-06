@@ -64,7 +64,7 @@ Topic `conference.extensions`, JSON:
 | agent → client | `{"type":"error","error":{"code","message"}}` e.g. `input_audio_too_long` |
 | client → agent | `{"type":"hermes.input_audio.state","muted":bool}` — agent stops feeding our audio to VAD |
 | client → agent | `{"type":"conference.message","text":"..."}` — typed turn, no STT |
-| client → agent | `{"type":"conference.control", ...}` — reserved |
+| client → agent | `{"type":"conference.control","action":"end-of-turn"}` — flush our buffered speech to STT now instead of waiting the 1.2 s silence endpoint. Reliable, no `identity` (taken from the packet), no ack; under 0.5 s buffered is ignored. Sent by `/end-turn`, push-to-talk release, and before every unmuted → muted transition (mute alone discards the buffer, so end-of-turn must go first) |
 
 Topic `conference.events` is the OpenAI-realtime-style protocol; Mouthpiece does not opt in.
 Audio: client publishes one mic track (`SOURCE_MICROPHONE`, 48 kHz mono), subscribes to the agent's
@@ -93,7 +93,7 @@ tray (pystray, main thread)          asyncio loop thread
 | `mouthpiece/audio.py` | `AudioIO`: InputStream → `AudioProcessingModule` (AEC + NS + HPF) → `rtc.AudioSource`; agent frames → ring buffer → OutputStream; every played block goes to `process_reverse_stream` so AEC knows what the speakers emitted. Mute = send silence. Exposes mic/speaker RMS for the stage. |
 | `mouthpiece/session.py` | `VoiceSession`: join / leave / mute / send_text, room events → `State` enum (`off, joining, in room, listening, thinking, speaking, error`), transcripts, observer callbacks. |
 | `mouthpiece/tray.py` | pystray app, menu, status line, log file (`mouthpiece.log`, no secrets), single-instance lock. |
-| `mouthpiece/hotkeys.py` | Global hotkeys (mute toggle, join/leave toggle). |
+| `mouthpiece/hotkeys.py` | Global hotkeys (mute toggle, join/leave toggle, stop) and push-to-talk (hold one key; release ends the turn). |
 | `mouthpiece/trigger.py` | `127.0.0.1:18760` HTTP: `POST /join/<bot>`, `/leave`, `/mute`, `/unmute`, `/toggle-mute`, `GET /status` (includes `"events": 1`), `GET /events` (SSE, below). For Stream Deck "Website"/"System: Open" actions, Candypanel, or a small plugin later. |
 | `mouthpiece/events.py` | `EventHub` on the App (survives bot switches): fans session events out to `/events` clients through bounded per-client queues (full: drop oldest `level`, then drop the client), polls status for changes, samples levels at 100 Hz and publishes the max at 20 Hz while in a room. Keeps its own speaker peak, since the desk face resets `AudioIO.speaker_peak`. |
 | `mouthpiece/stage/` | Stage window (always-on-top, frameless, transparent). Skin API: `paint(state, mic_level, spk_level, transcript_tail, t)`. First skin `kitt` ported from cast-skins. |

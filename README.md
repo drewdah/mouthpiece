@@ -86,6 +86,15 @@ Mouthpiece is in one room at a time. Picking another bot leaves the current room
   picker, Microphone and Speaker device pickers, Settings…, Open log.
 - **Hotkeys** (configurable under `hotkeys` in the config): `ctrl+alt+m` mute, `ctrl+alt+j` join or
   leave, `ctrl+alt+s` stop the bot talking.
+- **Push-to-talk** (`hotkeys.push_to_talk`, off by default): one key, e.g. `"f13"`, `"scroll lock"` or
+  `"right ctrl"` (combos aren't supported). Hold it to talk; let go and the bot hears you straight
+  away. If you were muted it unmutes while held and mutes again on release; if you were already
+  unmuted, release only ends your turn. The key still reaches other apps, so games keep working.
+  The tray shows the key when one is set.
+- **Ending your turn.** The bot normally waits about 1.2 s of silence before it treats what you said
+  as finished. Muting (tray, `ctrl+alt+m`, `/mute`), releasing push-to-talk, or `/end-turn` tells it
+  you're done right now, so the reply starts sooner. Muting always ends the turn before it mutes, so
+  nothing you said is dropped. Sending it with nothing said is harmless.
 - **Echo guard.** By default your mic is silenced toward the bot while it is speaking, so it can't hear
   itself through your speakers. The guard holds for the whole reply (pauses between sentences
   included) and for `echo_guard_tail_s` seconds after the last audio (default 1.2; raise it if the bot
@@ -106,7 +115,8 @@ Mouthpiece listens on `http://127.0.0.1:18760` (loopback only, GET or POST). In 
 |---|---|
 | `/switch/<bot id>` | one button per bot: join, or leave if already in that room |
 | `/join/<bot id>` · `/leave` · `/toggle` | explicit join, leave, or join/leave the current bot |
-| `/mute` · `/unmute` · `/toggle-mute` | mic |
+| `/mute` · `/unmute` · `/toggle-mute` | mic (muting ends your turn first) |
+| `/end-turn` | end your turn now, without muting |
 | `/stop` | stop the bot talking |
 | `/status` | JSON state (`state`, `bot`, `bot_display`, `muted`, `error`, `bots`, `events: 1`) |
 | `/events` | live event stream (Server-Sent Events, GET only), see below |

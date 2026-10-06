@@ -16,6 +16,8 @@ Client -> agent on "conference.events": {"type": "response.cancel"} stops the cu
 Topic "conference.extensions" (Hermes controls, {"type", ...}):
   client -> agent  {"type": "hermes.input_audio.state", "muted": bool}   agent ignores our audio
   client -> agent  {"type": "conference.message", "text": "..."}         typed turn, no STT
+  client -> agent  {"type": "conference.control", "action": "end-of-turn"}  flush our buffered speech to
+                   STT now instead of waiting the 1.2 s silence endpoint (no ack; <0.5 s buffered is ignored)
   agent -> client  {"type": "hermes.input_audio.state_updated", "muted": bool}
   agent -> client  {"type": "error", "error": {...}}  e.g. input_audio_too_long
   (agent:* lifecycle events also arrive here in some builds; handled too)
@@ -238,7 +240,16 @@ class VoiceSession:
         self._set_state(State.ERROR, "disconnected")
 
     # ---- mute ------------------------------------------------------------
+    async def end_turn(self) -> None:
+        """Tell the agent we're done talking: it runs STT on what it has buffered right away."""
+        if self.room:
+            await self._send(TOPIC_EXT, {"type": "conference.control", "action": "end-of-turn"})
+
     async def set_muted(self, muted: bool) -> None:
+        # Muting discards the agent's buffered speech unless the turn is ended first, so going
+        # from unmuted to muted ends the turn before the mute goes out (order matters).
+        if muted and self.room and not self.muted:
+            await self.end_turn()
         if self.audio:
             self.audio.muted = muted
         if self.room:

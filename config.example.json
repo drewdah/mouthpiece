@@ -44,6 +44,7 @@
   "hotkeys": {
     "toggle_mute": "ctrl+alt+m",
     "toggle_join": "ctrl+alt+j",
-    "stop": "ctrl+alt+s"
+    "stop": "ctrl+alt+s",
+    "push_to_talk": null
   }
 }
