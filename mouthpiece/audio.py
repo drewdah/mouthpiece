@@ -53,10 +53,15 @@ class AudioIO:
             auto_gain_control=auto_gain_control,
         )
         self.muted = False
-        # Echo guard: when True, the mic is silenced toward the agent while agent audio is
-        # playing (plus a short tail). Kills barge-in, but also kills the bot hearing itself.
+        # Echo guard: when True, the mic is silenced toward the agent for the whole of the bot's
+        # turn: while the agent says it is speaking, while its audio is still queued or audible,
+        # and for a tail after that. The tail covers the output path (e.g. Voicemeeter) and the
+        # room: with only a short tail after the last loud frame, the bot's last words reached
+        # the mic after the guard opened, and it answered itself. Kills barge-in, but also kills
+        # the bot hearing itself.
         self.gate_while_playing = True
-        self.gate_tail_s = 0.45
+        self.gate_tail_s = 1.2
+        self.agent_speaking = False   # set by the session from the agent's speaking state
         self.gated = False        # True while the guard is currently silencing the mic
         self.mic_level = 0.0      # 0..1 RMS of what we send
         self.speaker_level = 0.0  # 0..1 RMS of what we play
@@ -166,7 +171,7 @@ class AudioIO:
             self.apm.process_stream(frame)
         except Exception as e:  # never let the audio thread die
             log.debug("apm process_stream: %s", e)
-        playing = self.gate_while_playing and (time.monotonic() - self._last_play_ts) < self.gate_tail_s
+        playing = self.gate_while_playing and self.guarding(time.monotonic())
         self.gated = playing and not self.muted
         if self.muted or playing:
             frame = rtc.AudioFrame(data=bytes(len(pcm) * 2), sample_rate=RATE, num_channels=CHANNELS, samples_per_channel=len(pcm))
@@ -184,6 +189,13 @@ class AudioIO:
             return
         fut = asyncio.run_coroutine_threadsafe(self.source.capture_frame(frame), self.loop)
         fut.add_done_callback(self._mic_done)
+
+    def guarding(self, now: float) -> bool:
+        """The echo guard's verdict (ignoring gate_while_playing): the bot's turn isn't over yet."""
+        if self.agent_speaking or self._play_samples > 0 or len(self._carry):
+            self._last_play_ts = max(self._last_play_ts, now)
+            return True
+        return (now - self._last_play_ts) < self.gate_tail_s
 
     def _mic_done(self, fut) -> None:
         with self._mic_lock:

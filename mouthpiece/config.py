@@ -73,6 +73,7 @@ class Config:
     noise_suppression: bool = True
     auto_gain_control: bool = False
     barge_in: bool = False                 # False = echo guard on (mic silenced while the bot talks)
+    echo_guard_tail_s: float = 1.2         # the guard stays shut this long after the bot's audio ends
     trigger_port: int = 18760
     hotkeys: Optional[dict] = None
     log_file: str = "mouthpiece.log"
@@ -87,7 +88,7 @@ class Config:
 
     KNOWN = ("token_source", "livekit_url", "livekit_api_key", "livekit_api_secret", "mint_url", "mint_token",
              "identity", "name", "prefer_lan_url", "input_device", "output_device", "echo_cancellation",
-             "noise_suppression", "auto_gain_control", "barge_in", "trigger_port", "hotkeys", "log_file", "desk_state", "show_stage", "turing")
+             "noise_suppression", "auto_gain_control", "barge_in", "echo_guard_tail_s", "trigger_port", "hotkeys", "log_file", "desk_state", "show_stage", "turing")
 
     # ---- load / save ------------------------------------------------------
     @classmethod

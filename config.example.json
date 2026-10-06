@@ -14,6 +14,7 @@
   "noise_suppression": true,
   "auto_gain_control": false,
   "barge_in": false,
+  "echo_guard_tail_s": 1.2,
   "log_file": "mouthpiece.log",
   "desk_state": false,
   "turing": null,

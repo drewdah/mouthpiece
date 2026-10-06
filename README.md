@@ -87,8 +87,11 @@ Mouthpiece is in one room at a time. Picking another bot leaves the current room
 - **Hotkeys** (configurable under `hotkeys` in the config): `ctrl+alt+m` mute, `ctrl+alt+j` join or
   leave, `ctrl+alt+s` stop the bot talking.
 - **Echo guard.** By default your mic is silenced toward the bot while it is speaking, so it can't hear
-  itself through your speakers. Turn on *Allow interruptions* in the tray to disable that and rely on
-  echo cancellation instead; that gives you voice barge-in but needs a headset or a clean mic path.
+  itself through your speakers. The guard holds for the whole reply (pauses between sentences
+  included) and for `echo_guard_tail_s` seconds after the last audio (default 1.2; raise it if the bot
+  still answers its own last words, e.g. with a long output path through Voicemeeter). Turn on *Allow
+  interruptions* in the tray to disable that and rely on echo cancellation instead; that gives you
+  voice barge-in but needs a headset or a clean mic path.
 - **Stage.** Appears when you join, disappears when you leave. Drag it anywhere; the position is
   remembered. The `kitt` skin is a dashboard panel with an LED voice cluster and an LCD transcript.
   The `baymax` and `wheatley` skins are floating characters: hover for the controls and the transcript

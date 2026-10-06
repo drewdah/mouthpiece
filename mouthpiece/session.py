@@ -120,6 +120,8 @@ class VoiceSession:
         if s == self.state and error == self.error:
             return
         self.state, self.error = s, error
+        if self.audio:
+            self.audio.agent_speaking = s == State.SPEAKING       # the echo guard holds for the whole turn
         log.info("state -> %s%s", s.value, f" ({error})" if error else "")
         self._emit("state", {"state": s.value, "error": error})
 
@@ -163,6 +165,7 @@ class VoiceSession:
                              noise_suppression=self.cfg.noise_suppression,
                              auto_gain_control=self.cfg.auto_gain_control)
         self.audio.gate_while_playing = not self.cfg.barge_in
+        self.audio.gate_tail_s = max(0.0, float(self.cfg.echo_guard_tail_s))
         self.audio.muted = self._start_muted       # before the mic is published: nothing leaks
         try:
             self.audio.start()
