@@ -54,8 +54,8 @@ class AudioIO:
         )
         self.muted = False
         # Echo guard: when True, the mic is silenced toward the agent for the whole of the bot's
-        # turn: while the agent says it is speaking, while its audio is still queued or audible,
-        # and for a tail after that. The tail covers the output path (e.g. Voicemeeter) and the
+        # turn: while the agent says it is speaking, while its audio is audible (real energy: the
+        # agent's track streams silence, so "audio queued" means nothing), and for a tail after. The tail covers the output path (e.g. Voicemeeter) and the
         # room: with only a short tail after the last loud frame, the bot's last words reached
         # the mic after the guard opened, and it answered itself. Kills barge-in, but also kills
         # the bot hearing itself.
@@ -192,7 +192,7 @@ class AudioIO:
 
     def guarding(self, now: float) -> bool:
         """The echo guard's verdict (ignoring gate_while_playing): the bot's turn isn't over yet."""
-        if self.agent_speaking or self._play_samples > 0 or len(self._carry):
+        if self.agent_speaking:
             self._last_play_ts = max(self._last_play_ts, now)
             return True
         return (now - self._last_play_ts) < self.gate_tail_s

@@ -48,15 +48,15 @@ def test_the_guard_holds_through_pauses_while_the_agent_is_speaking():
     assert not a.guarding(104.3)
 
 
-def test_queued_audio_still_to_play_keeps_the_guard_shut():
+def test_the_agents_continuous_silence_does_not_shut_the_guard():
+    # Regression (2026-10-05): the agent's track streams silence, so the play queue is never
+    # empty; counting queued audio as "the bot's turn" muted the mic for good.
     a = guard()
-    a._play.append(np.ones(480, dtype=np.int16))
+    a._play.append(np.zeros(480, dtype=np.int16))
     a._play_samples = 480
-    assert a.guarding(500.0)
-    a._play.clear()
-    a._play_samples = 0
-    assert a.guarding(501.0)             # the tail runs from when the queue drained
-    assert not a.guarding(501.3)
+    a._carry = np.zeros(120, dtype=np.int16)
+    a._last_play_ts = 500.0
+    assert not a.guarding(502.0)
 
 
 def test_the_tail_is_configurable():
